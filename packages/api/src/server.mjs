@@ -212,7 +212,7 @@ app.delete('/api/trials/:id', async (req, res) => {
 });
 
 // -- static frontend ---------------------------------------------------------
-app.use(express.static(join(ROOT, 'packages', 'web', 'dist'), { index: 'index.html' }));
+app.use(express.static(join(ROOT, 'packages', 'web', 'public'), { index: 'index.html' }));
 
 /** Never leak internal shapes (visitor_hash, project_id) to a browser. */
 function shape(lease) {

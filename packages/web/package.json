@@ -3,7 +3,5 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "vite build"
-  }
+  "description": "OpenTry frontend. Deliberately build-free: plain HTML/CSS/JS served straight by the API, so deployment has no bundler step to fail."
 }

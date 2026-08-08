@@ -24,8 +24,10 @@ zerops:
       base:
         - nodejs@22
       buildCommands:
-        - npm ci
-        - npm run build --workspace=@opentry/web
+        # No bundler step: the frontend is plain HTML/CSS/JS served directly by
+        # the API. One fewer thing that can fail a deploy, and the build stays
+        # under 30s.
+        - npm ci --omit=dev
       deployFiles:
         - ./packages
         - ./catalog
@@ -34,7 +36,6 @@ zerops:
         - ./package-lock.json
       cache:
         - node_modules
-        - packages/web/node_modules
     run:
       base: nodejs@22
       ports:
@@ -60,7 +61,7 @@ zerops:
       base:
         - nodejs@22
       buildCommands:
-        - npm ci
+        - npm ci --omit=dev
       deployFiles:
         - ./packages
         - ./catalog

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Try any open-source app in 60 seconds. Private, real, disposable infrastructure — no signup, no Docker.",
+  "description": "Try any open-source app in 60 seconds. Private, real, disposable infrastructure \u2014 no signup, no Docker.",
   "engines": {
     "node": ">=20"
   },
@@ -17,7 +17,11 @@
     "gonogo:cleanup": "node --env-file-if-exists=.env.local scripts/gonogo.mjs --cleanup",
     "catalog:check": "node scripts/catalog-check.mjs",
     "dev:api": "node --watch packages/api/src/server.mjs",
-    "dev:controller": "node --watch packages/controller/src/main.mjs"
+    "dev:controller": "node --watch packages/controller/src/main.mjs",
+    "deploy": "node --env-file-if-exists=.env.local scripts/deploy.mjs",
+    "deploy:dry": "node --env-file-if-exists=.env.local scripts/deploy.mjs --dry-run",
+    "start:api": "node packages/api/src/server.mjs",
+    "start:controller": "node packages/controller/src/main.mjs"
   },
   "dependencies": {
     "ajv": "^8.20.0",

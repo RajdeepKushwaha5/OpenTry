@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenTry — try any open-source app in seconds</title>
+<meta name="description" content="Private, real, disposable trials of open-source apps. No signup, no Docker." />
+<style>
+  /* Build-free on purpose: no bundler step means one fewer thing that can
+     fail a deploy. Tokens up top so the whole page stays consistent. */
+  :root {
+    --bg: #0b0d10; --panel: #14171c; --panel-2: #1a1e24; --line: #262b33;
+    --fg: #e8ecf1; --muted: #8b95a5; --dim: #5d6675;
+    --brand: #3bbdb2; --brand-dim: #2a8a82;
+    --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
+    --radius: 12px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--fg); min-height: 100vh;
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--brand); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  header { margin-bottom: 40px; }
+  .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+  .dot { width: 15px; height: 15px; border-radius: 4px; background: var(--brand); }
+  .logo span { font-weight: 700; letter-spacing: .08em; font-size: 13px; text-transform: uppercase; }
+  h1 { font-size: clamp(28px, 4.5vw, 42px); line-height: 1.15; font-weight: 650; letter-spacing: -.02em; }
+  h1 em { color: var(--brand); font-style: normal; }
+  .sub { color: var(--muted); max-width: 60ch; margin-top: 14px; font-size: 16px; }
+
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 22px; display: flex; flex-direction: column;
+  }
+  .card h3 { font-size: 18px; display: flex; align-items: center; gap: 9px; }
+  .swatch { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .tagline { color: var(--muted); font-size: 14px; margin: 8px 0 14px; flex: 1; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .pill {
+    font: 11px/1 var(--mono); padding: 5px 9px; border-radius: 20px;
+    border: 1px solid var(--line); color: var(--dim); background: var(--panel-2);
+  }
+
+  button {
+    font: inherit; font-weight: 600; cursor: pointer; border: 0;
+    border-radius: 9px; padding: 11px 18px; transition: .12s;
+  }
+  .primary { background: var(--brand); color: #04211f; width: 100%; }
+  .primary:hover:not(:disabled) { background: #46d3c7; }
+  .ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .ghost:hover { color: var(--fg); border-color: var(--dim); }
+  .danger { background: transparent; color: var(--err); border: 1px solid #4a2224; }
+  .danger:hover { background: #2a1618; }
+  button:disabled { opacity: .45; cursor: default; }
+
+  /* ---- timeline ---- */
+  .stage { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; }
+  .stage h2 { font-size: 20px; margin-bottom: 6px; }
+  .stage .note { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
+
+  .steps { list-style: none; font: 13px/1.5 var(--mono); }
+  .steps li { display: flex; gap: 12px; padding: 7px 0; align-items: baseline; }
+  .steps .mark { width: 16px; flex: none; text-align: center; }
+  .steps .t { margin-left: auto; color: var(--dim); font-size: 12px; }
+  .s-ok .mark { color: var(--ok); }
+  .s-running .mark { color: var(--brand); }
+  .s-error .mark { color: var(--err); }
+  .s-running { color: var(--fg); }
+  .s-ok { color: var(--muted); }
+
+  /* ---- ready ---- */
+  .ready-url {
+    display: block; font: 15px/1.4 var(--mono); word-break: break-all;
+    background: var(--panel-2); border: 1px solid var(--brand-dim);
+    padding: 15px; border-radius: 9px; margin: 18px 0; color: var(--brand);
+    text-decoration: none;
+  }
+  .ready-url:hover { background: #1d2329; }
+  .creds { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font: 13px var(--mono); margin: 16px 0; }
+  .creds dt { color: var(--dim); }
+  .creds dd { color: var(--fg); user-select: all; }
+  .countdown { font: 600 30px var(--mono); color: var(--brand); letter-spacing: .02em; }
+  .countdown.low { color: var(--warn); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 20px; }
+
+  /* ---- receipt ---- */
+  .receipt { font: 13px/1.9 var(--mono); color: var(--muted); }
+  .receipt b { color: var(--fg); font-weight: 500; }
+
+  /* ---- pool telemetry ---- */
+  .pool {
+    margin-top: 34px; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--panel); padding: 18px 22px;
+  }
+  .pool h4 {
+    font: 600 11px/1 system-ui; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 14px;
+  }
+  .pool-rows { font: 13px var(--mono); display: grid; gap: 7px; }
+  .pool-row { display: flex; align-items: center; gap: 10px; }
+  .pool-row .name { color: var(--fg); min-width: 90px; }
+  .bulb { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+  .bulb.warm { background: var(--ok); box-shadow: 0 0 8px #4ade8066; }
+  .bulb.building { background: var(--warn); animation: pulse 1.3s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .pool-note { color: var(--dim); font-size: 12px; margin-top: 12px; line-height: 1.5; }
+
+  .banner {
+    border-radius: 9px; padding: 13px 16px; font-size: 14px; margin-bottom: 18px;
+    border: 1px solid; display: none;
+  }
+  .banner.show { display: block; }
+  .banner.warn { background: #2a2313; border-color: #4a3d18; color: #fcd34d; }
+  .banner.err { background: #2a1618; border-color: #4a2224; color: #fca5a5; }
+
+  footer { margin-top: 50px; color: var(--dim); font-size: 13px; line-height: 1.8; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><div class="dot"></div><span>OpenTry</span></div>
+    <h1>Try any open-source app.<br /><em>Yours alone. Gone in 30 minutes.</em></h1>
+    <p class="sub">
+      No signup, no credit card, no Docker. Every trial is a real, isolated
+      Zerops project — its own application, its own managed database, its own
+      URL — that destroys itself when you're done.
+    </p>
+  </header>
+
+  <div id="banner" class="banner"></div>
+
+  <!-- gallery -->
+  <section id="gallery">
+    <div id="apps" class="grid"></div>
+  </section>
+
+  <!-- provisioning -->
+  <section id="building" class="stage hidden">
+    <h2>Building your trial</h2>
+    <p class="note">
+      Real infrastructure, being created right now. This normally takes about
+      six minutes — which is exactly why nobody tries self-hosted software.
+    </p>
+    <ul id="steps" class="steps"></ul>
+  </section>
+
+  <!-- ready -->
+  <section id="ready" class="stage hidden">
+    <h2 id="ready-title">Your private trial is ready</h2>
+    <p class="note">Only you can reach this. Log in with the details below.</p>
+    <a id="trial-url" class="ready-url" target="_blank" rel="noopener"></a>
+    <dl id="creds" class="creds"></dl>
+    <div class="row">
+      <div>
+        <div id="countdown" class="countdown">--:--</div>
+        <div style="color:var(--dim);font-size:12px">remaining</div>
+      </div>
+      <div style="flex:1"></div>
+      <a id="open-btn" class="primary" style="text-decoration:none;text-align:center;width:auto;padding:11px 20px;color:#04211f" target="_blank" rel="noopener">Open app</a>
+      <button id="destroy-btn" class="danger">Destroy now</button>
+    </div>
+  </section>
+
+  <!-- receipt -->
+  <section id="receipt" class="stage hidden">
+    <h2>Destroyed</h2>
+    <p class="note">Everything that trial created has been removed.</p>
+    <div id="receipt-body" class="receipt"></div>
+    <div class="row"><button id="again-btn" class="ghost">Try something else</button></div>
+  </section>
+
+  <!-- live proof -->
+  <div class="pool">
+    <h4>Live pool</h4>
+    <div id="pool-rows" class="pool-rows"></div>
+    <p class="pool-note">
+      Trials are kept warm so you don't wait. Each one handed out is replaced by
+      a freshly provisioned project in the background — this panel is reading
+      real state, not a mock.
+    </p>
+  </div>
+
+  <footer>
+    Built on <a href="https://zerops.io" target="_blank" rel="noopener">Zerops</a>.
+    Each trial is a genuine isolated project, created from a manifest and
+    destroyed by a reaper on expiry.
+  </footer>
+</div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const api = (p, o) => fetch(p, o).then(async (r) => {
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), { status: r.status, body });
+  return body;
+});
+
+let current = null;      // the claimed trial
+let countdownTimer = null;
+let eventSource = null;
+
+function show(section) {
+  for (const id of ['gallery', 'building', 'ready', 'receipt']) {
+    $(id).classList.toggle('hidden', id !== section);
+  }
+}
+
+function banner(msg, kind = 'warn') {
+  const el = $('banner');
+  el.textContent = msg;
+  el.className = `banner show ${kind}`;
+  if (!msg) el.className = 'banner';
+}
+const clearBanner = () => { $('banner').className = 'banner'; };
+
+// ---- gallery ---------------------------------------------------------------
+
+async function loadCatalog() {
+  const { apps } = await api('/api/catalog');
+  $('apps').innerHTML = '';
+  for (const app of apps) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <h3><span class="swatch" style="background:${app.accent}"></span>${esc(app.name)}</h3>
+      <p class="tagline">${esc(app.tagline || app.description || '')}</p>
+      <div class="pills">
+        ${app.services.map((s) => `<span class="pill">${esc(s.hostname)} · ${esc(s.type)}</span>`).join('')}
+        <span class="pill">${app.ttlMinutes} min</span>
+      </div>
+      <button class="primary" data-slug="${esc(app.slug)}">Try ${esc(app.name)}</button>`;
+    card.querySelector('button').addEventListener('click', (e) => claim(e.target.dataset.slug));
+    $('apps').appendChild(card);
+  }
+}
+
+// ---- claim -----------------------------------------------------------------
+
+async function claim(slug) {
+  clearBanner();
+  document.querySelectorAll('.card button').forEach((b) => (b.disabled = true));
+  try {
+    const { trial } = await api('/api/trials', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ app: slug }),
+    });
+    enterTrial(trial);
+  } catch (err) {
+    if (err.status === 409 && err.body?.trial) {
+      // Already had one open — just show it rather than refusing.
+      enterTrial(err.body.trial);
+      return;
+    }
+    if (err.status === 503) {
+      // Honest: no warm trial. Say so, and say why.
+      show('gallery');
+      banner(
+        err.body?.building
+          ? 'All trials are in use. A new one is being provisioned right now — this takes about six minutes. Try again shortly.'
+          : 'No warm trial available. One is being started; try again in about a minute.',
+      );
+    } else {
+      show('gallery');
+      banner(err.message || 'Something went wrong.', 'err');
+    }
+  } finally {
+    document.querySelectorAll('.card button').forEach((b) => (b.disabled = false));
+  }
+}
+
+function enterTrial(trial) {
+  current = trial;
+  if (trial.url) return showReady(trial);
+  show('building');
+  streamEvents(trial.id);
+}
+
+// ---- provisioning timeline (SSE) -------------------------------------------
+
+function streamEvents(id) {
+  $('steps').innerHTML = '';
+  eventSource?.close();
+  eventSource = new EventSource(`/api/trials/${id}/events`);
+
+  eventSource.addEventListener('step', (e) => {
+    const s = JSON.parse(e.data);
+    const key = `step-${s.step.replace(/[^a-z0-9]/gi, '')}`;
+    let li = document.getElementById(key);
+    if (!li) {
+      li = document.createElement('li');
+      li.id = key;
+      $('steps').appendChild(li);
+    }
+    const mark = s.status === 'ok' ? '✓' : s.status === 'error' ? '✕' : '·';
+    li.className = `s-${s.status}`;
+    li.innerHTML = `<span class="mark">${mark}</span><span>${esc(s.message)}</span>
+                    <span class="t">${(s.at_ms / 1000).toFixed(1)}s</span>`;
+  });
+
+  eventSource.addEventListener('ready', (e) => {
+    eventSource.close();
+    showReady(JSON.parse(e.data));
+  });
+
+  eventSource.addEventListener('failed', (e) => {
+    eventSource.close();
+    show('gallery');
+    banner(JSON.parse(e.data).error || 'Trial failed to start.', 'err');
+  });
+}
+
+// ---- ready -----------------------------------------------------------------
+
+function showReady(trial) {
+  current = trial;
+  show('ready');
+  $('trial-url').textContent = trial.url;
+  $('trial-url').href = trial.url;
+  $('open-btn').href = trial.url;
+
+  $('creds').innerHTML = (trial.credentials || [])
+    .map((c) => `<dt>${esc(c.label)}</dt><dd>${esc(c.value)}</dd>`)
+    .join('');
+
+  startCountdown(trial.expiresAt);
+}
+
+function startCountdown(expiresAt) {
+  clearInterval(countdownTimer);
+  const end = new Date(expiresAt).getTime();
+  const tick = () => {
+    const left = end - Date.now();
+    if (left <= 0) {
+      clearInterval(countdownTimer);
+      $('countdown').textContent = '00:00';
+      banner('This trial has expired and is being destroyed.');
+      return;
+    }
+    const m = Math.floor(left / 60000);
+    const s = Math.floor((left % 60000) / 1000);
+    $('countdown').textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    $('countdown').classList.toggle('low', left < 5 * 60000);
+  };
+  tick();
+  countdownTimer = setInterval(tick, 1000);
+}
+
+$('destroy-btn').addEventListener('click', async () => {
+  if (!current) return;
+  $('destroy-btn').disabled = true;
+  $('destroy-btn').textContent = 'Destroying…';
+  try {
+    const res = await api(`/api/trials/${current.id}`, { method: 'DELETE' });
+    clearInterval(countdownTimer);
+    show('receipt');
+    $('receipt-body').innerHTML = `
+      <div>Project deleted.</div>
+      <div>Removed: <b>containers, database, storage, credentials, routes</b></div>
+      <div>Cleanup completes within <b>${res.sweepWithinSeconds ?? 30}s</b></div>`;
+  } catch (err) {
+    banner(err.message, 'err');
+  } finally {
+    $('destroy-btn').disabled = false;
+    $('destroy-btn').textContent = 'Destroy now';
+  }
+});
+
+$('again-btn').addEventListener('click', () => {
+  current = null;
+  clearBanner();
+  show('gallery');
+});
+
+// ---- live pool -------------------------------------------------------------
+
+async function refreshPool() {
+  try {
+    const p = await api('/api/pool');
+    $('pool-rows').innerHTML = Object.entries(p.apps)
+      .map(([slug, d]) => {
+        const cls = d.ready > 0 ? 'warm' : d.provisioning > 0 ? 'building' : '';
+        const state = d.ready > 0
+          ? `${d.ready} ready`
+          : d.provisioning > 0 ? 'provisioning…' : 'empty';
+        return `<div class="pool-row"><span class="bulb ${cls}"></span>
+                <span class="name">${esc(slug)}</span><span>${state}</span></div>`;
+      })
+      .join('') || '<div class="pool-row"><span>no apps</span></div>';
+    $('pool-rows').insertAdjacentHTML(
+      'beforeend',
+      `<div class="pool-row" style="color:var(--dim);margin-top:4px">
+         <span class="bulb"></span><span class="name">total</span>
+         <span>${p.active} / ${p.maxConcurrent} projects alive</span></div>`,
+    );
+  } catch { /* telemetry is best-effort; never break the page over it */ }
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+loadCatalog().catch((e) => banner(`Could not load catalog: ${e.message}`, 'err'));
+refreshPool();
+setInterval(refreshPool, 5000);
+</script>
+</body>
+</html>
