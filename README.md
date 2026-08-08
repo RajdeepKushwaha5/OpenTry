@@ -75,7 +75,7 @@ control plane (long-lived)          each trial (disposable, tagged)
 
 ### The warm pool
 
-Provisioning measured **~343s** for n8n. Nobody waits six minutes to look at software — that delay is precisely why people don't evaluate self-hosted apps, which is the problem OpenTry exists to solve. So finished trials idle in a pool and are handed over instantly, with a replacement provisioned in the background.
+Provisioning measured **326s** for n8n, handed to a visitor in **2.0s**. Nobody waits six minutes to look at software — that delay is precisely why people don't evaluate self-hosted apps, which is the problem OpenTry exists to solve. So finished trials idle in a pool and are handed over instantly, with a replacement provisioned in the background.
 
 The claim is one atomic statement using `FOR UPDATE SKIP LOCKED`. Two visitors clicking at the same moment get different trials; a SELECT-then-UPDATE would be a race that only appears under exactly the load a demo creates.
 
@@ -137,11 +137,13 @@ npm run gonogo -- --app hello      # minimal stack, fastest baseline
 npm run gonogo:cleanup             # remove any strays
 ```
 
-Deploy the control plane:
+Deploy your own copy — one command, no `zcli`, no Docker, no CI:
 
 ```bash
-zcli project project-import zerops-import.yaml   # set ZEROPS_TOKEN first
+npm run deploy
 ```
+
+See [DEPLOY.md](DEPLOY.md) for the full guide.
 
 ---
 
