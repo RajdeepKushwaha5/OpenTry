@@ -1,0 +1,79 @@
+# ---------------------------------------------------------------------------
+# Build and run configuration for the OpenTry control plane.
+#
+# One file, three setups, because this is a monorepo — Zerops supports several
+# `setup:` blocks in a single zerops.yaml and each service picks its own via
+# `zeropsSetup` in the import file.
+#
+# NOTE ON ENVIRONMENT VARIABLES.
+# Zerops isolates env vars per service by default (`envIsolation: service`), so
+# `api` and `controller` cannot see the database's generated variables unless
+# we reference them explicitly. That is why DATABASE_URL is built from
+# ${db_connectionString} here rather than read directly — the store's fallback
+# assembly path exists only for local development.
+# ---------------------------------------------------------------------------
+
+zerops:
+  # =========================================================================
+  # API — public HTTP. Serves the built frontend from the same origin as the
+  # JSON API, which avoids CORS entirely and removes a whole class of
+  # deployment bug from the demo path.
+  # =========================================================================
+  - setup: api
+    build:
+      base:
+        - nodejs@22
+      buildCommands:
+        - npm ci
+        - npm run build --workspace=@opentry/web
+      deployFiles:
+        - ./packages
+        - ./catalog
+        - ./node_modules
+        - ./package.json
+        - ./package-lock.json
+      cache:
+        - node_modules
+        - packages/web/node_modules
+    run:
+      base: nodejs@22
+      ports:
+        - port: 3000
+          httpSupport: true
+      envVariables:
+        NODE_ENV: production
+        PORT: "3000"
+        # Explicit cross-service reference — see the note at the top.
+        DATABASE_URL: ${db_connectionString}
+      start: node packages/api/src/server.mjs
+      healthCheck:
+        httpGet:
+          port: 3000
+          path: /health
+
+  # =========================================================================
+  # Controller — no ports, no public access. Holds the Zerops token and is the
+  # only process that can create or destroy infrastructure.
+  # =========================================================================
+  - setup: controller
+    build:
+      base:
+        - nodejs@22
+      buildCommands:
+        - npm ci
+      deployFiles:
+        - ./packages
+        - ./catalog
+        - ./node_modules
+        - ./package.json
+        - ./package-lock.json
+      cache:
+        - node_modules
+    run:
+      base: nodejs@22
+      envVariables:
+        NODE_ENV: production
+        DATABASE_URL: ${db_connectionString}
+      # No `ports:` block on purpose. A service with no declared port cannot be
+      # exposed publicly even by accident.
+      start: node packages/controller/src/main.mjs

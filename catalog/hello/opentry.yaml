@@ -1,0 +1,65 @@
+# Minimal baseline entry — NOT a real catalog app.
+#
+# Purpose: measure the floor. This is the fastest possible trial (one native
+# Node runtime + one Postgres, no Docker VM, no heavy image pull), so it tells
+# us how much of the total provisioning time is Zerops itself versus the
+# application we chose. Run:  npm run gonogo -- --app hello
+#
+# Excluded from the public gallery via `hidden: true`.
+
+version: 1
+
+app:
+  slug: hello
+  name: Baseline
+  tagline: Timing probe — smallest possible trial
+  description: One Node.js runtime plus one PostgreSQL. Used to measure platform floor time.
+  hidden: true
+  category: internal
+  accent: "#888888"
+
+trial:
+  ttlMinutes: 10
+  entry:
+    service: api
+    port: 3000
+
+infra:
+  services:
+    - hostname: db
+      type: postgresql@16
+      mode: NON_HA
+      priority: 10
+      verticalAutoscaling:
+        minCpu: 1
+        maxCpu: 1
+        minRam: 0.25
+        maxRam: 0.5
+        minDisk: 1
+        maxDisk: 2
+
+    - hostname: api
+      type: nodejs@22
+      priority: 1
+      enableSubdomainAccess: true
+      minContainers: 1
+      maxContainers: 1
+      # Official Zerops recipe: a tiny Express app that talks to Postgres.
+      buildFromGit: https://github.com/zeropsio/recipe-nodejs
+      verticalAutoscaling:
+        minCpu: 1
+        maxCpu: 1
+        minRam: 0.25
+        maxRam: 0.5
+
+verify:
+  - name: Database reachable
+    kind: tcp
+    service: db
+    port: 5432
+
+  - name: Application responding
+    kind: http
+    path: /
+
+    timeoutMs: 120000

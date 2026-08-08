@@ -1,0 +1,142 @@
+# =============================================================================
+# OpenTry manifest — n8n
+#
+# Runs the official n8n Docker image on a Zerops `docker` service.
+#
+# Why Docker rather than a native Node runtime: OSS projects already publish
+# images, so there is no build step at all — provisioning time is image pull
+# plus VM boot instead of an unpredictable `npm install`. A measured git-built
+# Node app took 296s, almost all of it dependency installation.
+#
+# Trade-off, stated honestly: Zerops runs Docker workloads in VMs rather than
+# Incus containers. VMs boot slower and do NOT vertically autoscale, so
+# resources here are fixed. For a 30-minute trial that is the correct trade.
+#
+# Docker syntax verified from the Zerops Docker service docs:
+#   run.base: docker@26.1
+#   run.prepareCommands: [ docker image pull <image>:<tag> ]
+#   run.start: docker run --network=host ... <image>:<tag>
+# `--network=host` is required so the container is reachable through the
+# Zerops L7 balancer. Env vars must be passed explicitly with -e flags because
+# host networking does not inherit the service environment automatically.
+#
+# The image tag is PINNED. Zerops caches prepareCommands output, so `:latest`
+# would never refresh on redeploy.
+# =============================================================================
+
+version: 1
+
+app:
+  slug: n8n
+  name: n8n
+  tagline: Workflow automation you can actually self-host
+  description: >
+    Build automations by wiring nodes together on a canvas — 400+ integrations,
+    webhooks, schedules and code steps. Normally you need Docker and a Postgres
+    running before you can tell whether you like it.
+  homepage: https://n8n.io
+  repo: https://github.com/n8n-io/n8n
+  license: Sustainable Use License
+  category: automation
+  accent: "#EA4B71"
+  firstSteps:
+    - Create the owner account using the credentials shown below
+    - Choose "Start from scratch" to open the workflow canvas
+    - Drop in a Schedule trigger and an HTTP Request node, then hit Execute
+
+trial:
+  ttlMinutes: 30
+  entry:
+    service: app
+    port: 5678
+  credentials:
+    - label: Email
+      key: OPENTRY_ADMIN_EMAIL
+      value: demo@opentry.dev
+    - label: Password
+      key: OPENTRY_ADMIN_PASSWORD
+      generate: password
+
+infra:
+  services:
+    - hostname: db
+      type: postgresql@16
+      mode: NON_HA
+      priority: 10
+      verticalAutoscaling:
+        minCpu: 1
+        maxCpu: 2
+        minRam: 0.25
+        maxRam: 1
+        minDisk: 1
+        maxDisk: 5
+
+    - hostname: app
+      type: docker@26.1
+      priority: 1
+      enableSubdomainAccess: true
+
+      # A Docker service still runs through the deploy pipeline, so it needs a
+      # source. We point at a trivial public repo and override its build with
+      # `zeropsYaml` below — nothing from the repo is actually used. This is
+      # also the mechanism that lets OpenTry run ANY project without that
+      # project adding a Zerops file to its repository.
+      buildFromGit: https://github.com/zeropsio/recipe-docker
+      zeropsSetup: app
+      zeropsYaml:
+        zerops:
+          - setup: app
+            # NO build section. Verified against github.com/zeropsio/recipe-docker
+            # and the Docker service docs: "base cannot be docker — build phase
+            # runs in containers, not VMs". A single-container Docker service
+            # has no build phase at all; it pulls an image and runs it.
+            # Including a build section here is what left the service stuck in
+            # READY_TO_DEPLOY across two earlier runs.
+            run:
+              base: docker@26.1
+              prepareCommands:
+                - docker image pull n8nio/n8n:1.70.1
+              ports:
+                - port: 5678
+                  httpSupport: true
+              # --network=host is required so Zerops' L7 balancer can reach the
+              # container. Host networking does not inherit the service
+              # environment, so every variable is forwarded explicitly with -e.
+              start: >
+                docker run --network=host
+                -e N8N_PORT -e N8N_LISTEN_ADDRESS -e N8N_ENCRYPTION_KEY
+                -e N8N_DIAGNOSTICS_ENABLED -e N8N_VERSION_NOTIFICATIONS_ENABLED
+                -e DB_TYPE -e DB_POSTGRESDB_HOST -e DB_POSTGRESDB_PORT
+                -e DB_POSTGRESDB_DATABASE -e DB_POSTGRESDB_USER
+                -e DB_POSTGRESDB_PASSWORD
+                n8nio/n8n:1.70.1
+
+      envSecrets:
+        N8N_ENCRYPTION_KEY: <@generateRandomString(<32>)>
+        N8N_PORT: "5678"
+        N8N_LISTEN_ADDRESS: 0.0.0.0
+        N8N_DIAGNOSTICS_ENABLED: "false"
+        N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+        DB_TYPE: postgresdb
+        DB_POSTGRESDB_HOST: db
+        DB_POSTGRESDB_PORT: "5432"
+        DB_POSTGRESDB_DATABASE: db
+        DB_POSTGRESDB_USER: db
+        DB_POSTGRESDB_PASSWORD: ${db_password}
+
+verify:
+  - name: Database reachable
+    kind: tcp
+    service: db
+    port: 5432
+
+  - name: Application responding
+    kind: http
+    path: /healthz
+    timeoutMs: 180000
+
+  - name: Setup screen renders
+    kind: http
+    path: /
+    expectBodyContains: n8n
+    timeoutMs: 60000

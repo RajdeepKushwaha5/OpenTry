@@ -1,0 +1,107 @@
+#yamlPreprocessor=on
+# ---------------------------------------------------------------------------
+# OpenTry control plane — the project that runs OpenTry itself.
+#
+#   zcli project project-import zerops-import.yaml
+#
+# This is NOT the infrastructure a trial runs on. Each trial is a separate
+# Zerops project created at runtime from a catalog manifest (see catalog/).
+# Keeping them apart is deliberate: a trial is untrusted, disposable, and
+# reachable by anonymous visitors, so it must never share a private network
+# with the control plane's database or its Zerops token.
+#
+#   this project (long-lived)        each trial (disposable, tagged)
+#   ┌───────────────────────┐        ┌──────────────────────────┐
+#   │ web  (public)         │        │ app  (public)            │
+#   │ api  (public)         │  ───▶  │ db   (private)           │
+#   │ controller (private)  │ creates│ ...                      │
+#   │ db   (private)        │        └──────────────────────────┘
+#   └───────────────────────┘         destroyed on TTL by the reaper
+# ---------------------------------------------------------------------------
+
+project:
+  name: opentry
+  description: Try any open-source app in seconds — private, disposable, real
+  corePackage: LIGHT
+  tags:
+    - opentry
+    - zerops-challenge
+  envVariables:
+    # Published Zerops list prices, used to estimate what a trial cost.
+    # Kept at project scope so api and controller agree on the numbers.
+    PRICE_SHARED_CPU_CORE_30D: "0.60"
+    PRICE_DEDICATED_CPU_CORE_30D: "6.00"
+    PRICE_RAM_PER_GB_30D: "3.00"
+    PRICE_DISK_PER_GB_30D: "0.10"
+    # Salt for hashing visitor fingerprints, so no raw IP is ever stored.
+    # MUST be project-scoped, not per-service: <@generateRandomString> is
+    # evaluated once per occurrence, so declaring it on both api and
+    # controller would give them DIFFERENT salts and the same visitor would
+    # hash to two different values. Project variables are inherited by every
+    # service automatically.
+    OPENTRY_VISITOR_SALT: <@generateRandomString(<32>)>
+
+services:
+  # -------------------------------------------------------------------------
+  # Postgres — the lease store. Private; nothing outside this project reaches it.
+  # -------------------------------------------------------------------------
+  - hostname: db
+    type: postgresql@16
+    mode: NON_HA
+    priority: 100
+    verticalAutoscaling:
+      minCpu: 1
+      maxCpu: 2
+      minRam: 0.25
+      maxRam: 1
+      minDisk: 1
+      maxDisk: 5
+
+  # -------------------------------------------------------------------------
+  # Controller — the ONLY service holding the Zerops token.
+  #
+  # No subdomain, no public port: it is unreachable from the internet. It runs
+  # the warm-pool and reaper loops. This split is the core security decision of
+  # the whole design — a bug in HTTP request handling cannot create or destroy
+  # infrastructure, because the process that serves HTTP has no credentials.
+  # -------------------------------------------------------------------------
+  - hostname: controller
+    type: nodejs@22
+    priority: 50
+    enableSubdomainAccess: false
+    minContainers: 1
+    maxContainers: 1
+    buildFromGit: https://github.com/RajdeepKushwaha5/OpenTry
+    zeropsSetup: controller
+    verticalAutoscaling:
+      cpuMode: SHARED
+      minCpu: 1
+      maxCpu: 2
+      minRam: 0.25
+      maxRam: 1
+    envSecrets:
+      # PASTE YOUR ZEROPS PERSONAL ACCESS TOKEN HERE BEFORE IMPORTING.
+      # It must be able to create and delete projects.
+      ZEROPS_TOKEN: REPLACE_WITH_YOUR_ZEROPS_TOKEN
+      # How many finished trials to keep idling per app.
+      OPENTRY_WARM_PER_APP: "1"
+      # Hard ceiling on trials alive at once — the blast-radius control.
+      OPENTRY_MAX_CONCURRENT_TRIALS: "6"
+
+  # -------------------------------------------------------------------------
+  # API — public. Holds no Zerops credentials; talks only to Postgres.
+  # -------------------------------------------------------------------------
+  - hostname: api
+    type: nodejs@22
+    priority: 40
+    enableSubdomainAccess: true
+    minContainers: 1
+    maxContainers: 1   # rate limiter is in-process; scaling out needs it moved to Valkey
+    buildFromGit: https://github.com/RajdeepKushwaha5/OpenTry
+    zeropsSetup: api
+    verticalAutoscaling:
+      cpuMode: SHARED
+      minCpu: 1
+      maxCpu: 2
+      minRam: 0.25
+      maxRam: 1

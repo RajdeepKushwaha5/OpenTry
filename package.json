@@ -1,0 +1,29 @@
+{
+  "name": "opentry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Try any open-source app in 60 seconds. Private, real, disposable infrastructure — no signup, no Docker.",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "discover": "node scripts/discover-api.mjs",
+    "gonogo": "node --env-file-if-exists=.env.local scripts/gonogo.mjs",
+    "gonogo:keep": "node --env-file-if-exists=.env.local scripts/gonogo.mjs --keep",
+    "gonogo:cleanup": "node --env-file-if-exists=.env.local scripts/gonogo.mjs --cleanup",
+    "catalog:check": "node scripts/catalog-check.mjs",
+    "dev:api": "node --watch packages/api/src/server.mjs",
+    "dev:controller": "node --watch packages/controller/src/main.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "express": "^5.2.1",
+    "pg": "^8.22.0",
+    "yaml": "^2.6.1"
+  }
+}

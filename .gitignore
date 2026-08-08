@@ -1,0 +1,21 @@
+# Secrets — NEVER commit. The Zerops token can create and delete real projects.
+.env
+.env.local
+.env.*.local
+*.token
+
+# Dependencies / build output
+node_modules/
+dist/
+build/
+.vite/
+
+# Logs and scratch
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+tmp/
+
+# Downloaded API spec (regenerate with npm run discover)
+spec.tmp.yml
