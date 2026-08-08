@@ -1,0 +1,136 @@
+# =============================================================================
+# OpenTry manifest — Umami
+#
+# Chosen deliberately as the SAFE hero app.
+#
+# Zerops' firewall is inbound-only: there is no egress filtering, so a trial
+# cannot be network-isolated. That makes an app's own capabilities the security
+# boundary. n8n is a tool for making arbitrary HTTP requests — handed to an
+# anonymous stranger it is an open proxy on a 30-minute lease.
+#
+# Umami is the opposite shape. It is a self-hosted analytics dashboard: it
+# receives requests and renders charts. It has no feature for calling out to
+# arbitrary hosts and no code execution. A visitor who wants to abuse it has
+# almost nothing to work with.
+#
+# It also needs no fixed public URL at boot, which matters here — the Zerops
+# subdomain does not exist until after the project is created, so any app that
+# demands its own canonical URL up front (Ghost, for one) cannot be provisioned
+# in a single pass.
+# =============================================================================
+
+version: 1
+
+app:
+  slug: umami
+  name: Umami
+  tagline: Privacy-focused analytics, self-hosted
+  description: >
+    A clean, cookie-free alternative to Google Analytics. Own your data, one
+    lightweight script, no consent banner. Normally you need Docker and a
+    Postgres before you can see the dashboard.
+  homepage: https://umami.is
+  repo: https://github.com/umami-software/umami
+  license: MIT
+  category: analytics
+  accent: "#2563eb"
+
+  # Declared honestly — this is what sets the proof-of-work difficulty, the
+  # default TTL and whether a warning is shown to the visitor.
+  capabilities:
+    outboundHttp: false
+    codeExecution: false
+
+  firstSteps:
+    - Sign in with the credentials below
+    - Open Settings → Websites to add a site and get its tracking script
+    - The Dashboard shows traffic once events start arriving
+
+trial:
+  ttlMinutes: 30
+  entry:
+    service: app
+    port: 3000
+  credentials:
+    - label: Username
+      key: OPENTRY_ADMIN_USER
+      value: admin
+    - label: Password
+      # Umami ships with a default password of "umami". We cannot change it
+      # before first boot, so it is shown here rather than pretending it is a
+      # secret. Trials are single-tenant and destroyed after 30 minutes.
+      value: umami
+
+infra:
+  services:
+    - hostname: db
+      type: postgresql@16
+      mode: NON_HA
+      priority: 10
+      verticalAutoscaling:
+        minCpu: 1
+        maxCpu: 2
+        minRam: 0.25
+        maxRam: 1
+        minDisk: 1
+        maxDisk: 5
+
+    - hostname: app
+      type: docker@26.1
+      priority: 1
+      enableSubdomainAccess: true
+      # Docker VMs take FIXED resources — min/max ranges are silently invalid.
+      verticalAutoscaling:
+        cpu: 2
+        ram: 2
+        disk: 5
+
+      # A Docker service still runs through the deploy pipeline, so it needs a
+      # source. The repo contents are unused: `zeropsYaml` below replaces its
+      # build entirely. This is also what lets OpenTry run any project without
+      # that project adding a Zerops file to its repository.
+      buildFromGit: https://github.com/zeropsio/recipe-docker
+      zeropsSetup: app
+      zeropsYaml:
+        zerops:
+          - setup: app
+            # No build section: Docker has no build phase (base list: Build = "-").
+            run:
+              base: docker@26.1
+              prepareCommands:
+                - docker image pull ghcr.io/umami-software/umami:postgresql-v2.14.0
+              ports:
+                - port: 3000
+                  httpSupport: true
+              # --network=host so the Zerops L7 balancer can reach it. Host
+              # networking does not inherit the service environment, so every
+              # variable is forwarded explicitly with -e.
+              start: >
+                docker run --network=host
+                -e DATABASE_URL -e DATABASE_TYPE -e APP_SECRET
+                -e HOSTNAME -e PORT
+                ghcr.io/umami-software/umami:postgresql-v2.14.0
+
+      envSecrets:
+        DATABASE_TYPE: postgresql
+        DATABASE_URL: postgresql://${db_user}:${db_password}@db:5432/${db_dbName}
+        APP_SECRET: <@generateRandomString(<32>)>
+        HOSTNAME: 0.0.0.0
+        PORT: "3000"
+
+verify:
+  - name: Database reachable
+    kind: tcp
+    service: db
+    port: 5432
+
+  - name: Application responding
+    kind: http
+    path: /api/heartbeat
+    timeoutMs: 240000
+
+  - name: Login screen renders
+    kind: http
+    path: /login
+    expectBodyContains: umami
+    timeoutMs: 90000

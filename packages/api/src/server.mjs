@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { loadCatalog, publicCatalog } from '../../shared/src/catalog.mjs';
 import { LIMITS } from '../../shared/src/limits.mjs';
 import { LeaseStore, visitorFingerprint, LeaseState } from '../../controller/src/store.mjs';
+import { issueChallenge, verifySolution, DIFFICULTY } from '../../shared/src/proof-of-work.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = Number(process.env.PORT ?? 3000);
@@ -103,12 +104,41 @@ app.get('/api/pool/building', async (_req, res) => {
   });
 });
 
+/**
+ * Issue a proof-of-work challenge.
+ *
+ * Difficulty scales with what the app can do. Zerops has no egress filtering,
+ * so an app that can make outbound requests is, in anonymous hands, a proxy —
+ * we cannot isolate it at the network layer, so we make volume expensive
+ * instead. An honest visitor pays about a second of CPU once.
+ */
+app.get('/api/challenge', (req, res) => {
+  const slug = String(req.query.app ?? '');
+  const manifest = catalog.get(slug);
+  if (!manifest || manifest.app.hidden) {
+    return res.status(404).json({ error: `Unknown app "${slug}"` });
+  }
+  const bits =
+    manifest.app.capabilities.level === 'elevated' ? DIFFICULTY.elevated : DIFFICULTY.standard;
+  res.json(issueChallenge(slug, bits));
+});
+
 /** Claim a warm trial. */
 app.post('/api/trials', async (req, res) => {
   const slug = String(req.body?.app ?? '');
   const manifest = catalog.get(slug);
   if (!manifest || manifest.app.hidden) {
     return res.status(404).json({ error: `Unknown app "${slug}"` });
+  }
+
+  // Proof of work before anything expensive happens.
+  const pow = verifySolution({
+    challenge: req.body?.challenge,
+    solution: String(req.body?.solution ?? ''),
+    appSlug: slug,
+  });
+  if (!pow.ok) {
+    return res.status(400).json({ error: `Proof of work failed: ${pow.reason}`, reason: 'pow' });
   }
 
   const visitorHash = visitorFingerprint(req);

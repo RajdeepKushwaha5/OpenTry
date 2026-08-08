@@ -45,6 +45,7 @@ export function publicCatalog(catalog) {
     .map((m) => ({
       ...m.app,
       ttlMinutes: m.trial.ttlMinutes,
+      capabilities: m.app.capabilities,
       services: m.services.map((s) => ({ hostname: s.hostname, type: s.type })),
       checks: m.verify.map((v) => v.name),
     }));

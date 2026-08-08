@@ -156,6 +156,7 @@ export function parseManifest(yamlText, { source = 'opentry.yaml' } = {}) {
       accent: /^#[0-9a-f]{6}$/i.test(String(app.accent)) ? app.accent : '#3BBDB2',
       firstSteps: Array.isArray(app.firstSteps) ? app.firstSteps.map(String) : [],
       hidden: app.hidden === true,
+      capabilities: normaliseCapabilities(app.capabilities),
     },
     trial: {
       ttlMinutes,
@@ -228,6 +229,36 @@ function clampService(svc) {
   }
 
   return out;
+}
+
+/**
+ * What a trial of this app can do, declared honestly by the catalog entry.
+ *
+ * This matters because Zerops' firewall is INBOUND only — there is no egress
+ * filtering, so a trial cannot be network-isolated. An app that can make
+ * arbitrary outbound HTTP requests or run user-supplied code is, handed to an
+ * anonymous stranger, an open proxy with a 30-minute lease. n8n is exactly
+ * that by design.
+ *
+ * We cannot remove the risk at the network layer, so we price it: risky apps
+ * get a harder proof-of-work, a shorter default TTL, and a visible warning.
+ * A manifest that fails to declare a capability it has is a catalog bug, and
+ * the honest default is to assume the worst.
+ */
+function normaliseCapabilities(cap = {}) {
+  const outboundHttp = cap.outboundHttp !== false; // default: assume it can
+  const codeExecution = cap.codeExecution === true;
+  const level = codeExecution || outboundHttp ? 'elevated' : 'standard';
+  return {
+    outboundHttp,
+    codeExecution,
+    level,
+    // Shown to the visitor. Silence about a known risk is worse than a label.
+    notice:
+      level === 'elevated'
+        ? 'This app can make outbound network requests. Trials are rate-limited and short-lived.'
+        : null,
+  };
 }
 
 function normaliseCheck(check, i) {
