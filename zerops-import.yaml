@@ -34,11 +34,14 @@ project:
     PRICE_RAM_PER_GB_30D: "3.00"
     PRICE_DISK_PER_GB_30D: "0.10"
     # Salt for hashing visitor fingerprints, so no raw IP is ever stored.
-    # MUST be project-scoped, not per-service: <@generateRandomString> is
-    # evaluated once per occurrence, so declaring it on both api and
-    # controller would give them DIFFERENT salts and the same visitor would
-    # hash to two different values. Project variables are inherited by every
-    # service automatically.
+    # MUST be project-scoped, not per-service: the random-string generator is
+    # evaluated once per occurrence, so declaring it on both api and controller
+    # would give them DIFFERENT salts and the same visitor would hash to two
+    # different values. Project variables are inherited by every service.
+    #
+    # NB: the Zerops preprocessor scans COMMENTS too. Writing the generator's
+    # literal syntax in a comment makes the import fail with
+    # "yamlPreprocessingError: variable [] not found". Describe it in prose.
     OPENTRY_VISITOR_SALT: <@generateRandomString(<32>)>
 
 services:
@@ -82,7 +85,11 @@ services:
     envSecrets:
       # PASTE YOUR ZEROPS PERSONAL ACCESS TOKEN HERE BEFORE IMPORTING.
       # It must be able to create and delete projects.
-      ZEROPS_TOKEN: REPLACE_WITH_YOUR_ZEROPS_TOKEN
+      #
+      # NB: the key is OPENTRY_ZEROPS_TOKEN, not ZEROPS_TOKEN. Zerops reserves
+      # the "ZEROPS_" prefix for its own generated variables and rejects the
+      # whole import with `userDataZeropsPrefixForbidden` if you use it.
+      OPENTRY_ZEROPS_TOKEN: REPLACE_WITH_YOUR_ZEROPS_TOKEN
       # How many finished trials to keep idling per app.
       OPENTRY_WARM_PER_APP: "1"
       # Hard ceiling on trials alive at once — the blast-radius control.

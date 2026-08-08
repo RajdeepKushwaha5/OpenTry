@@ -54,7 +54,15 @@ Takes roughly 5–10 minutes, most of it the git build.
 ```bash
 npm run deploy:dry                        # print the manifest, token redacted
 npm run deploy -- --name opentry-staging  # deploy a second copy
+npm run deploy -- --skip-git-check        # deploy anyway (see below)
 ```
+
+### Zerops builds from GitHub, not your working copy
+
+`npm run deploy` refuses to run with uncommitted changes, or when your local
+commit differs from `origin`. This is not fussiness — deploying unpushed work
+silently ships the *previous* commit, and the symptom is a service
+crash-looping on an error you already fixed. Commit and push first.
 
 ---
 
@@ -78,7 +86,7 @@ Set on the `controller` service (or at project scope):
 
 | Variable | Default | What it does |
 |---|---|---|
-| `ZEROPS_TOKEN` | — | **Required.** Creates and destroys trial projects |
+| `OPENTRY_ZEROPS_TOKEN` | — | **Required.** Creates and destroys trial projects. Note the prefix: Zerops reserves `ZEROPS_` for its own variables and rejects imports that define one |
 | `OPENTRY_WARM_PER_APP` | `1` | Finished trials kept idling per app |
 | `OPENTRY_MAX_CONCURRENT_TRIALS` | `6` | Hard ceiling on live trials — your blast radius |
 | `OPENTRY_VISITOR_SALT` | generated | Salt for visitor hashing. Must be **project-scoped** so `api` and `controller` agree |

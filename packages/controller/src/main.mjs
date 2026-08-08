@@ -27,9 +27,14 @@ const RECONCILE_INTERVAL_MS = Number(process.env.OPENTRY_RECONCILE_MS ?? 20_000)
 const log = (msg) => console.log(`${new Date().toISOString()} ${msg}`);
 
 async function main() {
-  const token = process.env.ZEROPS_TOKEN;
+  // Zerops reserves the "ZEROPS_" env prefix for its own generated variables
+  // and rejects any import that defines one, so on-platform the token arrives
+  // as OPENTRY_ZEROPS_TOKEN. Locally, .env.local uses the plainer name.
+  const token = process.env.OPENTRY_ZEROPS_TOKEN ?? process.env.ZEROPS_TOKEN;
   if (!token) {
-    console.error('ZEROPS_TOKEN is required. The controller cannot run without it.');
+    console.error(
+      'No Zerops token. Set OPENTRY_ZEROPS_TOKEN (on Zerops) or ZEROPS_TOKEN (locally).',
+    );
     process.exit(2);
   }
 

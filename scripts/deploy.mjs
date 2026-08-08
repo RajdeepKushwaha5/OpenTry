@@ -40,7 +40,7 @@ function die(msg, hint) {
   process.exit(1);
 }
 
-const token = process.env.ZEROPS_TOKEN;
+const token = process.env.OPENTRY_ZEROPS_TOKEN ?? process.env.ZEROPS_TOKEN;
 if (!token || token === 'PASTE_YOUR_TOKEN_HERE') {
   die(
     'ZEROPS_TOKEN is not set.',
@@ -73,6 +73,50 @@ if (DRY) {
   console.log(manifest.replace(token, '<redacted>'));
   process.exit(0);
 }
+
+/**
+ * Zerops builds from GitHub, not from your working copy.
+ *
+ * Deploying with uncommitted or unpushed changes silently ships the previous
+ * commit — which cost a full deploy cycle to diagnose once, because the
+ * symptom (a service crash-looping on an error message you just fixed) looks
+ * like anything except "your fix isn't there".
+ */
+async function assertPushed() {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = promisify(execFile);
+  const git = async (...a) => (await run('git', a, { cwd: ROOT })).stdout.trim();
+
+  try {
+    const dirty = await git('status', '--porcelain');
+    if (dirty) {
+      die(
+        'you have uncommitted changes.',
+        'Zerops builds from GitHub, so these would NOT be deployed:\n\n' +
+          dirty.split('\n').slice(0, 12).map((l) => '  ' + l).join('\n') +
+          '\n\nCommit and push first, or re-run with --skip-git-check.',
+      );
+    }
+
+    await git('fetch', 'origin', '--quiet').catch(() => {});
+    const local = await git('rev-parse', 'HEAD');
+    const remote = await git('rev-parse', 'origin/HEAD').catch(() => git('rev-parse', 'origin/main'));
+    if (local !== remote) {
+      die(
+        'your local commit is not the one on origin.',
+        `  local  ${local.slice(0, 8)}\n  origin ${remote.slice(0, 8)}\n\n` +
+          'Zerops clones from GitHub. Push first, or re-run with --skip-git-check.',
+      );
+    }
+    log(`git clean, HEAD ${local.slice(0, 8)} matches origin`);
+  } catch (err) {
+    if (err?.exitCode === 1 || /not a git repository/i.test(String(err))) return; // not a repo: skip
+    throw err;
+  }
+}
+
+if (!args.includes('--skip-git-check')) await assertPushed();
 
 const client = new ZeropsClient({ token });
 
