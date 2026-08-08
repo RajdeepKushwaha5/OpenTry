@@ -84,6 +84,25 @@ app.get('/api/pool', async (_req, res) => {
   });
 });
 
+/**
+ * What is being built right now, so the UI can stream its timeline.
+ *
+ * This is the "honest reveal": visitors get an instant handoff, and this shows
+ * the five minutes of real work that made it instant. Public on purpose.
+ */
+app.get('/api/pool/building', async (_req, res) => {
+  const lease = await store.currentlyProvisioning();
+  if (!lease) return res.json({ building: null });
+  res.json({
+    building: {
+      id: lease.id,
+      app: lease.app_slug,
+      startedAt: lease.created_at,
+      elapsedMs: Date.now() - new Date(lease.created_at).getTime(),
+    },
+  });
+});
+
 /** Claim a warm trial. */
 app.post('/api/trials', async (req, res) => {
   const slug = String(req.body?.app ?? '');

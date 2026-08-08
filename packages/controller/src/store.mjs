@@ -182,6 +182,24 @@ export class LeaseStore {
     return rows[0] ?? null;
   }
 
+  /**
+   * The trial currently being built, if any.
+   *
+   * Exists so the browser can watch a real provision happen. Without it the
+   * SSE timeline is unreachable: a warm claim returns an already-ready trial,
+   * so nothing in the normal flow ever shows the work being done — which is
+   * precisely the thing worth showing.
+   */
+  async currentlyProvisioning(appSlug = null) {
+    const { rows } = await this.pool.query(
+      `SELECT id, app_slug, created_at FROM leases
+        WHERE state = $1 AND ($2::text IS NULL OR app_slug = $2)
+        ORDER BY created_at DESC LIMIT 1`,
+      [LeaseState.PROVISIONING, appSlug],
+    );
+    return rows[0] ?? null;
+  }
+
   getLease(id) {
     return this.pool.query(`SELECT * FROM leases WHERE id = $1`, [id]).then((r) => r.rows[0] ?? null);
   }

@@ -112,6 +112,13 @@
   @keyframes pulse { 50% { opacity: .3; } }
   .pool-note { color: var(--dim); font-size: 12px; margin-top: 12px; line-height: 1.5; }
 
+  .live-build { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .live-head { display: flex; align-items: center; gap: 10px; font: 13px var(--mono); }
+  .live-head strong { font-weight: 500; color: var(--fg); }
+  .live-head .t { color: var(--dim); margin-left: auto; }
+  button.small { padding: 5px 11px; font-size: 12px; }
+  #live-steps { margin-top: 12px; max-height: 240px; overflow-y: auto; }
+
   .banner {
     border-radius: 9px; padding: 13px 16px; font-size: 14px; margin-bottom: 18px;
     border: 1px solid; display: none;
@@ -187,6 +194,15 @@
       a freshly provisioned project in the background — this panel is reading
       real state, not a mock.
     </p>
+    <div id="live-build" class="live-build hidden">
+      <div class="live-head">
+        <span class="bulb building"></span>
+        <strong id="live-title">Building a replacement</strong>
+        <span id="live-elapsed" class="t"></span>
+        <button id="live-toggle" class="ghost small">Watch</button>
+      </div>
+      <ul id="live-steps" class="steps hidden"></ul>
+    </div>
   </div>
 
   <footer>
@@ -383,6 +399,56 @@ $('again-btn').addEventListener('click', () => {
 
 // ---- live pool -------------------------------------------------------------
 
+// ---- live build watcher ----------------------------------------------------
+// The provisioning timeline would otherwise never be seen: a warm claim hands
+// back an already-finished trial, so the visitor never witnesses the ~5 minutes
+// of real work behind it. This surfaces the replacement being built right now.
+let watching = null;   // lease id currently streamed
+let watchSource = null;
+let watchOpen = false;
+
+$('live-toggle').addEventListener('click', () => {
+  watchOpen = !watchOpen;
+  $('live-steps').classList.toggle('hidden', !watchOpen);
+  $('live-toggle').textContent = watchOpen ? 'Hide' : 'Watch';
+});
+
+async function refreshLiveBuild() {
+  try {
+    const { building } = await api('/api/pool/building');
+    if (!building) {
+      $('live-build').classList.add('hidden');
+      watchSource?.close();
+      watchSource = null;
+      watching = null;
+      return;
+    }
+
+    $('live-build').classList.remove('hidden');
+    $('live-title').textContent = `Building a ${building.app} replacement`;
+    $('live-elapsed').textContent = `${Math.round(building.elapsedMs / 1000)}s elapsed`;
+
+    if (watching === building.id) return;   // already streaming this one
+
+    watching = building.id;
+    watchSource?.close();
+    $('live-steps').innerHTML = '';
+    watchSource = new EventSource(`/api/trials/${building.id}/events`);
+    watchSource.addEventListener('step', (e) => {
+      const st = JSON.parse(e.data);
+      const key = `live-${st.step.replace(/[^a-z0-9]/gi, '')}`;
+      let li = document.getElementById(key);
+      if (!li) { li = document.createElement('li'); li.id = key; $('live-steps').appendChild(li); }
+      const mark = st.status === 'ok' ? '✓' : st.status === 'error' ? '✕' : '·';
+      li.className = `s-${st.status}`;
+      li.innerHTML = `<span class="mark">${mark}</span><span>${esc(st.message)}</span>
+                      <span class="t">${(st.at_ms / 1000).toFixed(1)}s</span>`;
+      $('live-steps').scrollTop = $('live-steps').scrollHeight;
+    });
+    watchSource.addEventListener('ready', () => { watchSource?.close(); watchSource = null; watching = null; });
+  } catch { /* best effort */ }
+}
+
 async function refreshPool() {
   try {
     const p = await api('/api/pool');
@@ -412,7 +478,8 @@ function esc(s) {
 
 loadCatalog().catch((e) => banner(`Could not load catalog: ${e.message}`, 'err'));
 refreshPool();
-setInterval(refreshPool, 5000);
+refreshLiveBuild();
+setInterval(() => { refreshPool(); refreshLiveBuild(); }, 5000);
 </script>
 </body>
 </html>
