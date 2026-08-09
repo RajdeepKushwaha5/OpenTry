@@ -51,7 +51,7 @@
     .workspace{padding:28px;min-width:0}.banner{display:none;padding:12px 14px;margin-bottom:18px;border:1px solid;font:400 11px var(--mono)}.banner.show{display:block}.banner.warn{background:#fff7dc;border-color:#d9b351;color:#815a00}.banner.err{background:#fff0ee;border-color:#e49a93;color:#9c2e24}
     .workspace-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}.workspace-heading h3{font:800 23px var(--display);letter-spacing:-.035em;margin:0}.workspace-heading span{font:400 10px var(--mono);color:var(--muted)}
     .catalog-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.app-card{border:1px solid var(--line);background:var(--white);padding:20px;display:flex;flex-direction:column;justify-content:space-between;min-height:270px;transition:.18s ease}.app-card:hover{border-color:var(--ink);transform:translateY(-3px);box-shadow:7px 7px 0 rgba(7,17,14,.09)}
-    .app-card-head{display:flex;justify-content:space-between;gap:14px;align-items:start}.app-identity{display:flex;gap:11px;align-items:center}.app-mark{width:36px;height:36px;display:grid;place-items:center;color:white;font:700 16px var(--display);border-radius:8px}.app-title{font:800 18px var(--display);letter-spacing:-.03em}.app-meta{font:400 9px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.app-desc{color:var(--muted);font-size:13px;line-height:1.5;margin:16px 0}.app-pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}.app-pill{border:1px solid var(--line);padding:3px 6px;font:400 9px var(--mono);background:#f5f6f1}.app-notice{font-size:11px;color:#845e00;border-left:2px solid var(--amber);padding-left:8px;margin:10px 0}.card-btn{width:100%;margin-top:10px}
+    .app-card-head{display:flex;justify-content:space-between;gap:14px;align-items:start}.app-identity{display:flex;gap:11px;align-items:center}.app-mark{width:36px;height:36px;display:grid;place-items:center;color:white;font:700 16px var(--display);border-radius:8px}.app-title{font:800 18px var(--display);letter-spacing:-.03em}.app-meta{font:400 9px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.app-desc{color:var(--muted);font-size:13px;line-height:1.5;margin:16px 0}.app-pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}.app-pill{border:1px solid var(--line);padding:3px 6px;font:400 9px var(--mono);background:#f5f6f1}.app-notice{font-size:11px;color:#845e00;border-left:2px solid var(--amber);padding-left:8px;margin:10px 0}.card-btn{width:100%;margin-top:10px}.app-card.deep-link{animation:deepLink 2.4s ease-out}@keyframes deepLink{0%,100%{box-shadow:7px 7px 0 rgba(7,17,14,0)}18%{box-shadow:7px 7px 0 var(--lime);border-color:var(--ink)}}
     .stage{border:1px solid var(--line);background:var(--white);padding:28px}.stage-kicker{font:700 10px var(--mono);color:var(--muted);letter-spacing:.12em;text-transform:uppercase}.stage h2{font:800 34px/1.05 var(--display);letter-spacing:-.05em;margin:10px 0}.stage-note{color:var(--muted);font-size:14px}.ready-url{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--ink);color:var(--lime);padding:15px;margin:20px 0;font:400 12px var(--mono);overflow:hidden}.ready-url a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.credentials{display:grid;grid-template-columns:120px 1fr;border:1px solid var(--line);margin:0 0 20px}.credentials dt,.credentials dd{margin:0;padding:10px 12px;border-bottom:1px solid var(--line);font:400 11px var(--mono)}.credentials dt{background:#eff1eb;color:var(--muted)}.credentials dd{font-weight:700;user-select:all}.credentials>*:nth-last-child(-n+2){border-bottom:0}.ready-bottom{display:flex;justify-content:space-between;align-items:end;gap:20px;flex-wrap:wrap}.countdown{font:700 42px/1 var(--mono);letter-spacing:-.06em}.countdown.low{color:var(--amber)}.count-label{font:400 9px var(--mono);color:var(--muted);text-transform:uppercase;margin-top:7px}.ready-actions{display:flex;gap:9px;flex-wrap:wrap}
     .receipt{border-left:5px solid var(--lime)}.receipt-body{font:400 12px/1.9 var(--mono);color:var(--muted);margin:18px 0}
     .architecture{background:var(--ink);color:var(--white)}.architecture .eyebrow{color:var(--lime)}.architecture .section-head p{color:#a8b6b0}.flow{display:grid;grid-template-columns:1fr 76px 1fr 76px 1fr;align-items:stretch}.flow-arrow{display:grid;place-items:center;color:var(--lime);font:700 25px var(--mono)}.flow-card{border:1px solid #34443d;padding:26px;background:var(--ink-2)}.flow-card .num{color:var(--lime);font:700 11px var(--mono)}.flow-card h3{font:700 20px var(--display);margin:24px 0 10px}.flow-card p{color:#a8b6b0;font-size:13px;margin:0}.flow-card code{display:block;border-top:1px solid #34443d;margin-top:20px;padding-top:14px;color:var(--mint);font:400 10px/1.65 var(--mono)}
@@ -341,7 +341,27 @@
         $('pool-rows').innerHTML = Object.entries(pool.apps).map(([slug, depth]) => { const cls = depth.ready > 0 ? 'warm' : depth.provisioning > 0 ? 'building' : ''; const state = depth.ready > 0 ? `${depth.ready} ready` : depth.provisioning > 0 ? 'building' : 'empty'; return `<div class="pool-item"><span class="status-bulb ${cls}"></span><strong>${esc(slug)}</strong><span>${state}</span></div>`; }).join('') || '<div class="pool-item"><span></span><span>No public apps</span><span>—</span></div>';
       } catch { $('capacity').textContent = 'Telemetry temporarily unavailable'; }
     }
-    loadCatalog().catch(error => banner(`Catalog unavailable: ${error.message}`, 'err'));
+    /**
+     * Badge deep links. A README badge points at /?app=<slug>.
+     *
+     * Scrolls to the card and highlights it rather than claiming outright:
+     * with one trial per visitor, auto-claiming would spend someone's only
+     * allowed trial just for following a link out of curiosity.
+     */
+    function handleDeepLink() {
+      const slug = new URLSearchParams(location.search).get('app');
+      if (!slug) return;
+      const btn = document.querySelector(`.app-card button[data-slug="${CSS.escape(slug)}"]`);
+      const card = btn?.closest('.app-card');
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('deep-link');
+      setTimeout(() => card.classList.remove('deep-link'), 2400);
+    }
+
+    loadCatalog()
+      .then(handleDeepLink)
+      .catch(error => banner(`Catalog unavailable: ${error.message}`, 'err'));
     refreshPool(); refreshLiveBuild(); setInterval(() => { refreshPool(); refreshLiveBuild(); }, 5000);
   </script>
 </body>
