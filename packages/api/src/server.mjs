@@ -19,6 +19,7 @@ import { LIMITS } from '../../shared/src/limits.mjs';
 import { LeaseStore, visitorFingerprint, LeaseState } from '../../controller/src/store.mjs';
 import { issueChallenge, verifySolution, DIFFICULTY } from '../../shared/src/proof-of-work.mjs';
 import { renderBadge, badgeSnippets } from './badge.mjs';
+import { estimateCostUsd, formatCost, monthlyEquivalentUsd } from '../../provisioner/src/cost.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = Number(process.env.PORT ?? 3000);
@@ -310,7 +311,22 @@ app.delete('/api/trials/:id', async (req, res) => {
     lease.id,
   ]);
 
-  res.json({ destroyed: true, sweepWithinSeconds: LIMITS.reaperIntervalMs / 1000 });
+  // Compute the receipt here rather than waiting for the reaper: the visitor
+  // is looking at the screen now, and the reaper runs up to 30s later.
+  const manifest = catalog.get(lease.app_slug);
+  const lifetimeMs = Date.now() - new Date(lease.created_at).getTime();
+  const cost = manifest ? estimateCostUsd(manifest.services, lifetimeMs) : null;
+
+  res.json({
+    destroyed: true,
+    sweepWithinSeconds: LIMITS.reaperIntervalMs / 1000,
+    lifetimeMs,
+    estimatedCostUsd: cost,
+    estimatedCostLabel: cost == null ? null : formatCost(cost),
+    // The comparison that makes the number mean something.
+    monthlyEquivalentUsd: manifest ? monthlyEquivalentUsd(manifest.services) : null,
+    removed: ['containers', 'database', 'storage', 'credentials', 'routes'],
+  });
 });
 
 // -- static frontend ---------------------------------------------------------
@@ -321,6 +337,8 @@ function shape(lease) {
   return {
     id: lease.id,
     app: lease.app_slug,
+    appName: catalog.get(lease.app_slug)?.app.name ?? lease.app_slug,
+    firstSteps: catalog.get(lease.app_slug)?.app.firstSteps ?? [],
     state: lease.state,
     url: lease.url,
     credentials: lease.credentials ?? [],
