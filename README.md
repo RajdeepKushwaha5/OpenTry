@@ -6,6 +6,17 @@ OpenTry helps developers evaluate self-hosted applications without creating a cl
 
 ### [Launch OpenTry →](https://api-2d72-3000.prg1.zerops.app)
 
+![OpenTry: claim a real disposable trial in seconds, then destroy it](docs/preview.svg)
+
+<sub>Illustration of the real API calls and responses, not a screen recording. The live state is below.</sub>
+
+**Warm right now** — these badges are served by the running control plane and change with the pool:
+
+[![Metabase](https://api-2d72-3000.prg1.zerops.app/badge/metabase.svg)](https://api-2d72-3000.prg1.zerops.app)
+[![n8n](https://api-2d72-3000.prg1.zerops.app/badge/n8n.svg)](https://api-2d72-3000.prg1.zerops.app)
+[![Umami](https://api-2d72-3000.prg1.zerops.app/badge/umami.svg)](https://api-2d72-3000.prg1.zerops.app)
+[![Vikunja](https://api-2d72-3000.prg1.zerops.app/badge/vikunja.svg)](https://api-2d72-3000.prg1.zerops.app)
+
 | | |
 |---|---|
 | **Live application** | <https://api-2d72-3000.prg1.zerops.app> |

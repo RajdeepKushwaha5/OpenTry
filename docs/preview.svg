@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" width="900" height="420" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" role="img" aria-label="OpenTry: claiming a disposable trial and destroying it, shown as terminal output">
+  <title>OpenTry — claim a real disposable trial in seconds, then destroy it</title>
+
+  <style>
+    .bg    { fill: #10201b; }
+    .chrome{ fill: #1a2f28; }
+    .dot   { r: 5.5; }
+    .t     { font-size: 13px; fill: #9eb3aa; }
+    .cmd   { fill: #e8f3ee; }
+    .lime  { fill: #b9f227; }
+    .mint  { fill: #6fe3b0; }
+    .dim   { fill: #6d8078; }
+    .amber { fill: #e0a53c; }
+    .head  { font-size: 10.5px; fill: #7f9089; letter-spacing: .12em; }
+
+    /* Each line fades in, holds, and the whole sequence loops. */
+    .l { opacity: 0; animation: reveal 14s infinite; }
+    @keyframes reveal {
+      0%   { opacity: 0; }
+      3%   { opacity: 1; }
+      92%  { opacity: 1; }
+      97%  { opacity: 0; }
+      100% { opacity: 0; }
+    }
+    .d1  { animation-delay: 0.2s }   .d2  { animation-delay: 0.9s }
+    .d3  { animation-delay: 1.5s }   .d4  { animation-delay: 2.6s }
+    .d5  { animation-delay: 3.2s }   .d6  { animation-delay: 3.7s }
+    .d7  { animation-delay: 4.2s }   .d8  { animation-delay: 4.7s }
+    .d9  { animation-delay: 5.2s }   .d10 { animation-delay: 6.3s }
+    .d11 { animation-delay: 7.0s }   .d12 { animation-delay: 7.6s }
+    .d13 { animation-delay: 8.2s }   .d14 { animation-delay: 9.0s }
+
+    /* The cursor keeps blinking so the card never looks frozen. */
+    .caret { animation: blink 1.05s steps(1) infinite; }
+    @keyframes blink { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .l { opacity: 1; animation: none; }
+      .caret { animation: none; }
+    }
+  </style>
+
+  <rect class="bg" width="900" height="420" rx="10"/>
+  <rect class="chrome" width="900" height="34" rx="10"/>
+  <rect class="chrome" y="24" width="900" height="10"/>
+  <circle class="dot" cx="22" cy="17" fill="#e06c5f"/>
+  <circle class="dot" cx="42" cy="17" fill="#e0b64a"/>
+  <circle class="dot" cx="62" cy="17" fill="#63c98b"/>
+  <text class="head" x="86" y="21">OPENTRY — REAL DISPOSABLE INFRASTRUCTURE</text>
+  <text class="head" x="880" y="21" text-anchor="end">api-2d72-3000.prg1.zerops.app</text>
+
+  <g class="t">
+    <!-- what is warm right now -->
+    <text class="l d1" x="26" y="70"><tspan class="lime">$</tspan> <tspan class="cmd">curl opentry/api/pool</tspan></text>
+    <text class="l d2" x="26" y="92"><tspan class="dim">{</tspan>"metabase":{"ready":1}, "n8n":{"ready":1}, "umami":{"ready":1}, "vikunja":{"ready":1}<tspan class="dim">}</tspan></text>
+
+    <!-- the claim -->
+    <text class="l d3" x="26" y="128"><tspan class="lime">$</tspan> <tspan class="cmd">curl -X POST opentry/api/trials -d '{"app":"metabase"}'</tspan></text>
+    <text class="l d4" x="26" y="150"><tspan class="mint">✓</tspan> claimed in <tspan class="cmd">1.2s</tspan> <tspan class="dim">— from a pool that was warmed 12 minutes ago</tspan></text>
+
+    <text class="l d5" x="46" y="176">url      <tspan class="cmd">https://app-2d95-3000.prg1.zerops.app</tspan></text>
+    <text class="l d6" x="46" y="196">login    <tspan class="cmd">demo@opentry.dev</tspan> <tspan class="dim">/</tspan> <tspan class="cmd">•••••••••••••</tspan></text>
+    <text class="l d7" x="46" y="216">expires  <tspan class="amber">29:58</tspan></text>
+
+    <!-- it is a whole project, not a container -->
+    <text class="l d8" x="26" y="252"><tspan class="dim">a whole Zerops project, tagged</tspan> <tspan class="lime">OPENTRY_EPHEMERAL</tspan></text>
+    <text class="l d9" x="46" y="272"><tspan class="mint">db</tspan>  postgresql@16 <tspan class="dim">private</tspan>   <tspan class="mint">app</tspan> docker@26.1 <tspan class="dim">public subdomain + TLS</tspan></text>
+
+    <!-- the teardown -->
+    <text class="l d10" x="26" y="308"><tspan class="lime">$</tspan> <tspan class="cmd">curl -X DELETE opentry/api/trials/2d95</tspan></text>
+    <text class="l d11" x="26" y="330"><tspan class="mint">✓</tspan> destroyed <tspan class="dim">— containers, database, storage, credentials, routes</tspan></text>
+    <text class="l d12" x="46" y="352">cost     <tspan class="cmd">~$0.0086</tspan> <tspan class="dim">estimated, 30 minutes</tspan></text>
+    <text class="l d13" x="46" y="372">same stack for 30 days  <tspan class="cmd">~$12.40</tspan></text>
+
+    <text class="l d14" x="26" y="400"><tspan class="lime">$</tspan> <tspan class="caret" fill="#b9f227">▌</tspan></text>
+  </g>
+</svg>
