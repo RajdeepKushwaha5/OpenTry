@@ -150,7 +150,7 @@ See [DEPLOY.md](DEPLOY.md) for the full guide.
 ## Tests
 
 ```bash
-npm test        # 36 tests, no dependencies beyond Node
+npm test        # 43 tests, no dependencies beyond Node
 npm run test:db # concurrency tests — needs a real Postgres
 ```
 
@@ -173,6 +173,15 @@ by reading them:
   either faithfully, and a test passing against a fake would be worse than no
   test. **They are skipped loudly when `DATABASE_URL` is absent**, because a
   silently skipped safety test reads as a passing one.
+
+  **Verified against PostgreSQL 16:** twenty simultaneous claims against five
+  warm trials hand out exactly five, all distinct, with fifteen clean misses.
+  One visitor racing themselves eight ways ends with exactly one trial.
+
+  ```bash
+  docker run -d --name opentry-pg -p 55432:5432     -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=opentry_test postgres:16-alpine
+  DATABASE_URL=postgresql://postgres:pw@127.0.0.1:55432/opentry_test npm run test:db
+  ```
 
 ---
 
