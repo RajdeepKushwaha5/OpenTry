@@ -7,7 +7,7 @@
  * UPDATE, and destroying one sets a flag the reaper acts on. The worst a
  * compromised request handler can do is mark rows.
  *
- * (`/api/trials/:id` DELETE is the one exception and is discussed inline.)
+ * Even DELETE only expires a lease row; the private reaper performs teardown.
  */
 
 import express from 'express';
@@ -18,6 +18,7 @@ import { loadCatalog, publicCatalog } from '../../shared/src/catalog.mjs';
 import { LIMITS } from '../../shared/src/limits.mjs';
 import { LeaseStore, visitorFingerprint, LeaseState } from '../../controller/src/store.mjs';
 import { issueChallenge, verifySolution, DIFFICULTY } from '../../shared/src/proof-of-work.mjs';
+import { renderBadge, badgeSnippets } from './badge.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = Number(process.env.PORT ?? 3000);
@@ -102,6 +103,52 @@ app.get('/api/pool/building', async (_req, res) => {
       elapsedMs: Date.now() - new Date(lease.created_at).getTime(),
     },
   });
+});
+
+/**
+ * README badge, reflecting real pool state.
+ *
+ * Served outside /api so it is not rate-limited: a popular README would
+ * otherwise trip the limiter and show every visitor a broken image. It is a
+ * cheap read and reveals nothing sensitive.
+ *
+ * Cache headers are short and allow stale-while-revalidate — GitHub proxies
+ * README images through camo, and without this the badge would freeze at
+ * whatever state it had when first fetched.
+ */
+app.get('/badge/:slug.svg', async (req, res) => {
+  const slug = String(req.params.slug ?? '');
+  const manifest = catalog.get(slug);
+
+  let state = 'unknown';
+  if (manifest && !manifest.app.hidden) {
+    try {
+      const depth = await store.poolDepth(slug);
+      if (depth.ready > 0) state = 'ready';
+      else if (depth.provisioning > 0) state = 'building';
+      else state = 'empty';
+    } catch {
+      state = 'unknown';
+    }
+  }
+
+  res.type('image/svg+xml');
+  res.set('cache-control', 'public, max-age=60, stale-while-revalidate=300');
+  res.send(renderBadge({ left: 'OpenTry', state }));
+});
+
+/** Copy-paste snippets for a maintainer's README. */
+app.get('/api/apps/:slug/embed', (req, res) => {
+  const slug = String(req.params.slug ?? '');
+  const manifest = catalog.get(slug);
+  if (!manifest || manifest.app.hidden) {
+    return res.status(404).json({ error: `Unknown app "${slug}"` });
+  }
+  // Honour the proxy headers Zerops' L7 balancer sets, so snippets carry the
+  // public URL rather than an internal one.
+  const proto = req.headers['x-forwarded-proto'] ?? 'https';
+  const host = req.headers['x-forwarded-host'] ?? req.headers.host;
+  res.json(badgeSnippets({ origin: `${proto}://${host}`, slug, appName: manifest.app.name }));
 });
 
 /**

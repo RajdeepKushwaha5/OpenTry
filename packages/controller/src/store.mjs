@@ -105,7 +105,7 @@ export class LeaseStore {
 
   markFailed(id, error) {
     return this.pool.query(
-      `UPDATE leases SET state = $2, error = $3, destroyed_at = now() WHERE id = $1`,
+      `UPDATE leases SET state = $2, error = $3 WHERE id = $1`,
       [id, LeaseState.FAILED, String(error).slice(0, 2000)],
     );
   }
@@ -129,8 +129,9 @@ export class LeaseStore {
    * Returns the claimed lease, or null if the pool is empty.
    */
   async claimWarmLease({ appSlug, visitorHash, ttlMinutes }) {
-    const { rows } = await this.pool.query(
-      `UPDATE leases
+    try {
+      const { rows } = await this.pool.query(
+        `UPDATE leases
           SET state = $1,
               claimed_at = now(),
               expires_at = now() + ($2 || ' minutes')::interval,
@@ -143,9 +144,13 @@ export class LeaseStore {
            LIMIT 1
         )
         RETURNING *`,
-      [LeaseState.CLAIMED, String(ttlMinutes), visitorHash, LeaseState.READY_UNCLAIMED, appSlug],
-    );
-    return rows[0] ?? null;
+        [LeaseState.CLAIMED, String(ttlMinutes), visitorHash, LeaseState.READY_UNCLAIMED, appSlug],
+      );
+      return rows[0] ?? null;
+    } catch (err) {
+      if (err.code !== '23505') throw err;
+      return this.hasActiveTrial(visitorHash);
+    }
   }
 
   // -- pool accounting -----------------------------------------------------
@@ -166,15 +171,15 @@ export class LeaseStore {
   async activeCount() {
     const { rows } = await this.pool.query(
       `SELECT count(*)::int AS n FROM leases
-        WHERE state IN ($1, $2, $3)`,
-      [LeaseState.PROVISIONING, LeaseState.READY_UNCLAIMED, LeaseState.CLAIMED],
+        WHERE state <> $1 AND (project_id IS NOT NULL OR state = $2)`,
+      [LeaseState.DESTROYED, LeaseState.PROVISIONING],
     );
     return rows[0].n;
   }
 
   async hasActiveTrial(visitorHash) {
     const { rows } = await this.pool.query(
-      `SELECT id, app_slug, url, expires_at FROM leases
+      `SELECT * FROM leases
         WHERE visitor_hash = $1 AND state = $2 AND expires_at > now()
         LIMIT 1`,
       [visitorHash, LeaseState.CLAIMED],
@@ -221,6 +226,7 @@ export class LeaseStore {
          OR (state = $3 AND created_at < now() - ($4 || ' milliseconds')::interval)
          OR (state = $5 AND $6::bigint IS NOT NULL
              AND ready_at < now() - ($6 || ' milliseconds')::interval)
+         OR state IN ($7, $8)
           )`,
       [
         LeaseState.CLAIMED,
@@ -229,6 +235,8 @@ export class LeaseStore {
         String(provisionTimeoutMs),
         LeaseState.READY_UNCLAIMED,
         warmMaxAgeMs ?? null,
+        LeaseState.FAILED,
+        LeaseState.DESTROYING,
       ],
     );
     return rows;

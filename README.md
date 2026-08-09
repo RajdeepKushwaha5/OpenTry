@@ -163,6 +163,7 @@ Findings from working against the live API, each of which cost a debugging cycle
 | Docker has no build phase | The base list shows `Build: -`. A `build:` section on a Docker service prevents it from ever starting |
 | Embedded `zeropsYaml` | `build.base` and `build.deployFiles` must be **arrays**, unlike a repo-level `zerops.yml` |
 | Case-insensitive env collision | `HOSTNAME` collides with the auto-generated `hostname` and fails the import with `userDataDuplicateKey`. Pass such values inline in the run command instead |
+| `--network=host` and port 80 | A Docker container bound to port 80 under host networking collides with the project's own L7 balancer. The service reports ACTIVE and the URL resolves, but nothing answers. Pick a high port |
 | Env isolation | Services cannot see each other's variables by default; reference them explicitly (`${db_connectionString}`) |
 | Preprocessor scope | `<@generateRandomString>` is evaluated per occurrence — a value two services must share belongs at project scope |
 

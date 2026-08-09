@@ -61,6 +61,7 @@ export class Reaper {
     const due = await this.store.findReapable({
       graceMs: LIMITS.reaperGraceMs,
       provisionTimeoutMs: LIMITS.provisionTimeoutMs + 120_000,
+      warmMaxAgeMs: LIMITS.warmMaxAgeMs,
     });
 
     for (const lease of due) {

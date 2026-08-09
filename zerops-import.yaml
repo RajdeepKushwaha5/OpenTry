@@ -12,8 +12,8 @@
 #
 #   this project (long-lived)        each trial (disposable, tagged)
 #   ┌───────────────────────┐        ┌──────────────────────────┐
-#   │ web  (public)         │        │ app  (public)            │
-#   │ api  (public)         │  ───▶  │ db   (private)           │
+#   │ api + web (public)    │  ───▶  │ app  (public)            │
+#   │                       │        │ db   (private)           │
 #   │ controller (private)  │ creates│ ...                      │
 #   │ db   (private)        │        └──────────────────────────┘
 #   └───────────────────────┘         destroyed on TTL by the reaper

@@ -20,6 +20,7 @@ export const LIMITS = Object.freeze({
   /** Ceiling per trial project. */
   maxServicesPerTrial: 4,
   maxTtlMinutes: 30,
+  minTtlMinutes: 5,
   defaultTtlMinutes: 30,
 
   /** Ceiling across the whole platform — the blast-radius control. */
@@ -34,6 +35,8 @@ export const LIMITS = Object.freeze({
   reaperGraceMs: 60 * 1000,
   /** How often the reaper sweeps. */
   reaperIntervalMs: 30 * 1000,
+  /** Rotate idle pool projects so removed apps and stale images cannot bill forever. */
+  warmMaxAgeMs: 6 * 60 * 60 * 1000,
 });
 
 /**
@@ -74,6 +77,7 @@ export const ALLOWED_SERVICE_TYPES = [
   /^alpine@[\d.]+$/,
   /^static$/,
   /^objectstorage$/,
+  /^object-storage$/,
 ];
 
 export function isAllowedServiceType(type) {

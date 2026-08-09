@@ -50,6 +50,12 @@ CREATE INDEX IF NOT EXISTS leases_visitor
   ON leases (visitor_hash)
   WHERE state = 'CLAIMED';
 
+-- The API checks first for a friendly response, but only the database can
+-- close the race between two simultaneous claim requests from one visitor.
+CREATE UNIQUE INDEX IF NOT EXISTS leases_one_claimed_per_visitor
+  ON leases (visitor_hash)
+  WHERE state = 'CLAIMED' AND visitor_hash IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS leases_project_id ON leases (project_id);
 
 -- Append-only provisioning timeline. The browser replays these over SSE, and

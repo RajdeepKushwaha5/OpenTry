@@ -1,0 +1,102 @@
+# =============================================================================
+# OpenTry manifest — Metabase
+#
+# Risk tier: ELEVATED. Metabase's whole purpose is connecting to databases, and
+# a visitor can point it at any host they like — which, with no egress
+# filtering available, is an outbound reach we cannot remove. Declared honestly
+# so it gets the harder proof-of-work and a visible warning.
+#
+# Java, so it boots slower than a Node image. The behaviour checks allow for it.
+# =============================================================================
+
+version: 1
+
+app:
+  slug: metabase
+  name: Metabase
+  tagline: Business intelligence without the licence
+  description: >
+    Ask questions of your data and build dashboards without writing SQL —
+    though you can. Normally a JVM, a Postgres and a config file before you
+    see a single chart.
+  homepage: https://www.metabase.com
+  repo: https://github.com/metabase/metabase
+  license: AGPL-3.0
+  category: analytics
+  accent: "#509ee3"
+  capabilities:
+    outboundHttp: true      # can connect to arbitrary database hosts
+    codeExecution: false
+  firstSteps:
+    - Complete the short setup wizard — any details will do, it is disposable
+    - Metabase ships with a Sample Database; open it to get charts immediately
+    - Try "New → Question" and pick a table to explore
+
+trial:
+  ttlMinutes: 30
+  entry:
+    service: app
+    port: 3000
+
+infra:
+  services:
+    - hostname: db
+      type: postgresql@16
+      mode: NON_HA
+      priority: 10
+      verticalAutoscaling:
+        minCpu: 1
+        maxCpu: 2
+        minRam: 0.5
+        maxRam: 1
+        minDisk: 1
+        maxDisk: 5
+
+    - hostname: app
+      type: docker@26.1
+      priority: 1
+      enableSubdomainAccess: true
+      verticalAutoscaling:
+        cpu: 2
+        ram: 2
+        disk: 5
+      buildFromGit: https://github.com/zeropsio/recipe-docker
+      zeropsSetup: app
+      zeropsYaml:
+        zerops:
+          - setup: app
+            run:
+              base: docker@26.1
+              prepareCommands:
+                - docker image pull metabase/metabase:v0.50.26
+              ports:
+                - port: 3000
+                  httpSupport: true
+              start: >
+                docker run --network=host
+                -e MB_DB_TYPE -e MB_DB_HOST -e MB_DB_PORT
+                -e MB_DB_DBNAME -e MB_DB_USER -e MB_DB_PASS
+                -e MB_JETTY_PORT=3000 -e MB_JETTY_HOST=0.0.0.0
+                metabase/metabase:v0.50.26
+      envSecrets:
+        MB_DB_TYPE: postgres
+        MB_DB_HOST: db
+        MB_DB_PORT: "5432"
+        MB_DB_DBNAME: ${db_dbName}
+        MB_DB_USER: ${db_user}
+        MB_DB_PASS: ${db_password}
+
+verify:
+  - name: Database reachable
+    kind: tcp
+    service: db
+    port: 5432
+  - name: Application responding
+    kind: http
+    path: /api/health
+    timeoutMs: 300000
+  - name: Setup screen renders
+    kind: http
+    path: /
+    expectBodyContains: Metabase
+    timeoutMs: 90000

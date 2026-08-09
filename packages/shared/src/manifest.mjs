@@ -82,9 +82,13 @@ export function parseManifest(yamlText, { source = 'opentry.yaml' } = {}) {
 
   const trial = doc.trial ?? {};
   const entry = req(trial, 'entry', 'trial');
-  const ttlMinutes = Math.min(
-    Number(trial.ttlMinutes ?? LIMITS.defaultTtlMinutes),
-    LIMITS.maxTtlMinutes,
+  const requestedTtl = Number(trial.ttlMinutes ?? LIMITS.defaultTtlMinutes);
+  if (!Number.isFinite(requestedTtl)) {
+    throw new ManifestError('ttlMinutes must be a number', 'trial.ttlMinutes');
+  }
+  const ttlMinutes = Math.max(
+    LIMITS.minTtlMinutes,
+    Math.min(Math.floor(requestedTtl), LIMITS.maxTtlMinutes),
   );
 
   const services = req(doc.infra ?? {}, 'services', 'infra');
@@ -101,6 +105,12 @@ export function parseManifest(yamlText, { source = 'opentry.yaml' } = {}) {
   const hostnames = new Set();
   for (const svc of services) {
     const hostname = String(req(svc, 'hostname', 'infra.services[]'));
+    if (!/^[a-z0-9]{1,25}$/.test(hostname)) {
+      throw new ManifestError(
+        'hostname must contain only lowercase ASCII letters and numbers, max 25 characters',
+        'infra.services',
+      );
+    }
     if (hostnames.has(hostname)) {
       throw new ManifestError(`duplicate hostname "${hostname}"`, 'infra.services');
     }
@@ -129,6 +139,21 @@ export function parseManifest(yamlText, { source = 'opentry.yaml' } = {}) {
       `entry.service "${entry.service}" is not one of [${[...hostnames].join(', ')}]`,
       'trial.entry.service',
     );
+  }
+
+  for (const [i, credential] of (trial.credentials ?? []).entries()) {
+    if (!credential || typeof credential !== 'object') {
+      throw new ManifestError('credential must be an object', `trial.credentials[${i}]`);
+    }
+    if (credential.key) {
+      const key = String(credential.key);
+      if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
+        throw new ManifestError('credential key must be a valid uppercase environment key', `trial.credentials[${i}].key`);
+      }
+      if (isForbiddenEnvKey(key)) {
+        throw new ManifestError(`credential key "${key}" is blocked`, `trial.credentials[${i}].key`);
+      }
+    }
   }
 
   // Zerops reserves ports outside 10-65435 for internal systems, and the
@@ -306,13 +331,12 @@ export function renderImportYaml(manifest, { trialId } = {}) {
 
   const services = manifest.services.map((svc) => {
     const out = { ...svc };
-    if (out.envSecrets) {
-      out.envSecrets = { ...out.envSecrets };
-      // Inject generated credentials into the entry service so the app can
-      // bootstrap an owner account with the details we display.
-      if (svc.hostname === manifest.trial.entry.service) {
-        Object.assign(out.envSecrets, secrets);
-      }
+    if (out.envSecrets) out.envSecrets = { ...out.envSecrets };
+    // Inject generated credentials into the entry service so the app can
+    // bootstrap an owner account with the details we display. Create the map
+    // when the manifest did not otherwise need service secrets.
+    if (svc.hostname === manifest.trial.entry.service && Object.keys(secrets).length) {
+      out.envSecrets = { ...(out.envSecrets ?? {}), ...secrets };
     }
     return out;
   });
