@@ -363,6 +363,25 @@ app.post('/api/trials', async (req, res) => {
   res.status(201).json({ trial: shape(lease) });
 });
 
+/**
+ * Recover the visitor's live trial.
+ *
+ * Closing the tab used to strand a trial: it kept running, and billing, with
+ * no way back to its URL or credentials until the TTL expired. Since a visitor
+ * may only hold one at a time, that also locked them out of claiming another.
+ *
+ * No cookie needed — the same salted fingerprint that enforces the one-trial
+ * limit identifies them here.
+ */
+app.get('/api/trials/mine', async (req, res) => {
+  const lease = await store.hasActiveTrial(visitorFingerprint(req));
+  if (!lease) return res.json({ trial: null });
+  // hasActiveTrial returns a narrow projection; fetch the full row so the
+  // browser gets credentials and provisioning time back too.
+  const full = await store.getLease(lease.id);
+  res.json({ trial: full ? shape(full) : null });
+});
+
 app.get('/api/trials/:id', async (req, res) => {
   const lease = await store.getLease(req.params.id);
   if (!lease) return res.status(404).json({ error: 'Unknown trial' });

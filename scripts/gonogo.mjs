@@ -17,6 +17,7 @@
  */
 
 import { readFile, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,7 +67,12 @@ Strays? Run:  npm run gonogo:cleanup
 }
 
 async function loadManifest(slug) {
-  const path = join(ROOT, 'catalog', slug, 'opentry.yaml');
+  // The timing probe lives in fixtures/, not catalog/ — it is a measurement
+  // tool, not a product, and a hidden entry sitting in the catalog invites
+  // someone to eventually un-hide it.
+  const path = existsSync(join(ROOT, 'catalog', slug, 'opentry.yaml'))
+    ? join(ROOT, 'catalog', slug, 'opentry.yaml')
+    : join(ROOT, 'fixtures', slug, 'opentry.yaml');
   try {
     return parseManifest(await readFile(path, 'utf8'), { source: `${slug}/opentry.yaml` });
   } catch (err) {

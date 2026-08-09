@@ -40,7 +40,7 @@ app:
   category: automation
   accent: "#EA4B71"
   firstSteps:
-    - Create the owner account using the credentials shown below
+    - You are already the owner — sign in with the credentials below
     - Choose "Start from scratch" to open the workflow canvas
     - Drop in a Schedule trigger and an HTTP Request node, then hit Execute
 
@@ -140,3 +140,25 @@ verify:
     path: /
     expectBodyContains: n8n
     timeoutMs: 60000
+
+# -----------------------------------------------------------------------------
+# Seeding — skip the owner-setup wizard.
+#
+# n8n blocks the entire interface behind an owner-account form on first boot.
+# A visitor with 30 minutes should not spend the first two filling it in, and
+# a wizard is the least convincing thing to land on when the whole claim is
+# "this is real, running infrastructure".
+#
+# Best effort: if n8n changes this endpoint, a visitor still gets a working
+# trial with a setup form rather than no trial at all.
+# -----------------------------------------------------------------------------
+seed:
+  - name: Create the owner account
+    method: POST
+    path: /rest/owner/setup
+    expectStatus: [200, 201]
+    body:
+      email: ${OPENTRY_ADMIN_EMAIL}
+      firstName: OpenTry
+      lastName: Demo
+      password: ${OPENTRY_ADMIN_PASSWORD}

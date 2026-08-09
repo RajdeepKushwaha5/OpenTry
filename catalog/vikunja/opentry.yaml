@@ -21,12 +21,19 @@ app:
     outboundHttp: false
     codeExecution: false
   firstSteps:
-    - Register any username and password — the trial is yours alone
-    - Create a project, then switch it to the Kanban view
+    - Sign in with the credentials below — the account already exists
+    - Open the seeded project and switch it to the Kanban view
     - Everything is stored in the trial's own Postgres and deleted with it
 trial:
   ttlMinutes: 30
   entry: { service: app, port: 3456 }
+  credentials:
+    - label: Username
+      key: OPENTRY_ADMIN_USER
+      value: demo
+    - label: Password
+      key: OPENTRY_ADMIN_PASSWORD
+      generate: password
 infra:
   services:
     - hostname: db
@@ -69,3 +76,52 @@ verify:
   - { name: Database reachable, kind: tcp, service: db, port: 5432 }
   - { name: Application responding, kind: http, path: /api/v1/info, timeoutMs: 240000 }
   - { name: Interface renders, kind: http, path: /, expectBodyContains: "Vikunja", timeoutMs: 60000 }
+
+# -----------------------------------------------------------------------------
+# Seeding — register the account and leave something on the board.
+#
+# Vikunja opens on a registration form, then on an empty project list. Neither
+# tells a visitor anything about the software. Registering the account they are
+# handed, and putting one project with tasks in it, means the first screen is
+# the actual product.
+# -----------------------------------------------------------------------------
+seed:
+  - name: Register the demo account
+    method: POST
+    path: /api/v1/register
+    expectStatus: [200, 201]
+    body:
+      username: ${OPENTRY_ADMIN_USER}
+      password: ${OPENTRY_ADMIN_PASSWORD}
+      email: demo@opentry.dev
+
+  - name: Sign in
+    method: POST
+    path: /api/v1/login
+    expectStatus: [200]
+    body:
+      username: ${OPENTRY_ADMIN_USER}
+      password: ${OPENTRY_ADMIN_PASSWORD}
+    capture:
+      token: token
+
+  - name: Create a starter project
+    method: PUT
+    path: /api/v1/projects
+    expectStatus: [200, 201]
+    headers:
+      authorization: Bearer ${token}
+    body:
+      title: Try Vikunja
+      description: A seeded project so the board is not empty.
+    capture:
+      projectId: id
+
+  - name: Add a task to it
+    method: PUT
+    path: /api/v1/projects/${projectId}/tasks
+    expectStatus: [200, 201]
+    headers:
+      authorization: Bearer ${token}
+    body:
+      title: Drag me to another Kanban column

@@ -121,25 +121,11 @@ export class Reaper {
     }
   }
 
-  /** Destroy a specific trial on the visitor's request. Returns the receipt. */
-  async destroyNow(leaseId) {
-    const lease = await this.store.getLease(leaseId);
-    if (!lease) throw new Error('unknown trial');
-    if (lease.state === 'DESTROYED') return { alreadyDestroyed: true };
-
-    const manifest = this.catalog.get(lease.app_slug);
-    const lifetimeMs = Date.now() - new Date(lease.created_at).getTime();
-    const cost = manifest ? estimateCostUsd(manifest.services, lifetimeMs) : null;
-
-    await this.store.markDestroying(lease.id);
-    await this.client.deleteProject(lease.project_id, LEASE_TAG);
-    await this.store.markDestroyed(lease.id, { estimatedCost: cost });
-
-    return {
-      leaseId,
-      lifetimeMs,
-      estimatedCostUsd: cost,
-      removed: ['containers', 'database', 'storage', 'credentials', 'routes'],
-    };
-  }
+  // There is deliberately NO destroyNow() here.
+  //
+  // A visitor pressing "Destroy" expires the lease through the API; this
+  // sweep collects it moments later. An immediate-delete method existed and
+  // was never called, which is worse than useless: it meant two code paths
+  // could remove infrastructure, and the entire safety argument rests on
+  // there being exactly one, guarded by the tag check.
 }

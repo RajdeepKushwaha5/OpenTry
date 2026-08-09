@@ -59,6 +59,9 @@
     .ops{border-top:1px solid var(--line);margin-top:16px}.ops-verdict{display:flex;align-items:center;gap:8px;font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.07em;margin-bottom:11px}.ops-verdict .lamp{width:8px;height:8px;border-radius:50%}.ops-verdict.ok .lamp{background:#1f9d55}.ops-verdict.degraded .lamp{background:var(--amber)}.ops-verdict.failing .lamp{background:#c0392b}.ops-verdict.idle .lamp{background:var(--muted)}
     .ops-rows{display:grid;gap:6px;font:400 10px var(--mono);color:var(--muted)}.ops-rows div{display:flex;justify-content:space-between;gap:10px}.ops-rows b{color:var(--ink);font-weight:700}
     .ops-failures{margin-top:10px;font:400 9px/1.6 var(--mono);color:#8a4b4b}
+    .submit-panel{margin-top:16px;border:1px solid var(--line);background:var(--white);padding:15px}.submit-panel summary{font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.08em;cursor:pointer}.submit-panel p{font-size:12px;color:var(--muted);margin:12px 0;line-height:1.6}.submit-panel code{font:400 11px var(--mono);background:#f0f1ec;padding:1px 4px}
+    #manifest-input{width:100%;min-height:150px;border:1px solid var(--line);padding:11px;font:400 11px/1.55 var(--mono);background:#fbfbf9;resize:vertical}
+    .validate-out{margin-top:12px;font:400 11px/1.7 var(--mono);padding:11px;border-left:3px solid var(--line);background:#f7f8f4}.validate-out.ok{border-left-color:#1f9d55}.validate-out.bad{border-left-color:#c0392b;color:#8a3b30}.validate-out pre{white-space:pre-wrap;word-break:break-word;margin:8px 0 0;font-size:10px;color:var(--muted);max-height:200px;overflow:auto}
     .withheld{margin-top:14px;border:1px dashed var(--line);padding:13px 15px;background:#faf9f5}.withheld h4{font:700 9px var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 8px}.withheld div{font:400 11px/1.6 var(--mono);color:var(--muted)}.withheld b{color:var(--ink)}
     .receipt{border-left:5px solid var(--lime)}.receipt-body{font:400 12px/1.9 var(--mono);color:var(--muted);margin:18px 0}
     .architecture{background:var(--ink);color:var(--white)}.architecture .eyebrow{color:var(--lime)}.architecture .section-head p{color:#a8b6b0}.flow{display:grid;grid-template-columns:1fr 76px 1fr 76px 1fr;align-items:stretch}.flow-arrow{display:grid;place-items:center;color:var(--lime);font:700 25px var(--mono)}.flow-card{border:1px solid #34443d;padding:26px;background:var(--ink-2)}.flow-card .num{color:var(--lime);font:700 11px var(--mono)}.flow-card h3{font:700 20px var(--display);margin:24px 0 10px}.flow-card p{color:#a8b6b0;font-size:13px;margin:0}.flow-card code{display:block;border-top:1px solid #34443d;margin-top:20px;padding-top:14px;color:var(--mint);font:400 10px/1.65 var(--mono)}
@@ -157,6 +160,17 @@
             <div id="banner" class="banner"></div>
             <section id="gallery">
               <div id="withheld" class="withheld hidden"></div>
+              <details class="submit-panel">
+                <summary>Add your own app to the catalog</summary>
+                <p>Paste an <code>opentry.yaml</code>. This validates it the same way the
+                catalog loader does — clamping, per-family field rules, blocked env keys —
+                and checks the rendered Import YAML against Zerops' own published schema.
+                Nothing is provisioned or installed.</p>
+                <textarea id="manifest-input" spellcheck="false"
+                  placeholder="version: 1&#10;app:&#10;  slug: my-app&#10;  name: My App&#10;..."></textarea>
+                <button id="validate-btn" class="btn btn-dark">Validate manifest</button>
+                <div id="validate-out" class="validate-out hidden"></div>
+              </details>
               <div class="workspace-heading"><h3>Available now</h3><span>PRIVATE INSTANCE · 30 MINUTES</span></div>
               <div id="apps" class="catalog-grid"></div>
             </section>
@@ -415,8 +429,31 @@
       startCountdown(trial.expiresAt);
     }
     function startCountdown(expiresAt) {
-      clearInterval(countdownTimer); const end = new Date(expiresAt).getTime();
-      const tick = () => { const left = end - Date.now(); if (left <= 0) { clearInterval(countdownTimer); $('countdown').textContent = '00:00'; banner('This lease expired. The controller is tearing down its Zerops project.'); return; } const minutes = Math.floor(left / 60000), seconds = Math.floor((left % 60000) / 1000); $('countdown').textContent = `${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`; $('countdown').classList.toggle('low', left < 300000); };
+      clearInterval(countdownTimer);
+      const end = new Date(expiresAt).getTime();
+      // Warn before it vanishes. A countdown that silently reaches zero while
+      // someone is mid-sentence in an editor is a bad way to learn the rules.
+      const warned = new Set();
+      const tick = () => {
+        const left = end - Date.now();
+        if (left <= 0) {
+          clearInterval(countdownTimer);
+          $('countdown').textContent = '00:00';
+          banner('This lease expired. The controller is tearing down its Zerops project.');
+          return;
+        }
+        for (const at of [300, 60]) {
+          if (!warned.has(at) && left <= at * 1000) {
+            warned.add(at);
+            banner(at === 60
+              ? 'One minute left. Export anything you want to keep — this trial is about to be destroyed.'
+              : 'Five minutes left on this trial.');
+          }
+        }
+        const minutes = Math.floor(left / 60000), seconds = Math.floor((left % 60000) / 1000);
+        $('countdown').textContent = `${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+        $('countdown').classList.toggle('low', left < 300000);
+      };
       tick(); countdownTimer = setInterval(tick, 1000);
     }
 
@@ -492,6 +529,43 @@
      * this existed, a total provisioning outage looked identical to an idle
      * pool from the outside.
      */
+    $('validate-btn')?.addEventListener('click', async () => {
+      const box = $('validate-out');
+      const button = $('validate-btn');
+      box.classList.remove('hidden', 'ok', 'bad');
+      box.textContent = 'Validating…';
+      button.disabled = true;
+      try {
+        const r = await api('/api/manifests/validate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ manifest: $('manifest-input').value }),
+        });
+        if (!r.valid) {
+          box.classList.add('bad');
+          box.innerHTML = '<b>Not valid yet</b>' +
+            r.errors.map(e => `<div>· ${esc(e.path ? e.path + ': ' : '')}${esc(e.message)}</div>`).join('');
+          return;
+        }
+        box.classList.add('ok');
+        box.innerHTML =
+          `<b>Valid.</b> ${esc(r.app.name)} — ${r.app.services.length} service(s), ` +
+          `${r.app.checks.length} behaviour check(s), ${r.app.seedSteps} seed step(s), ` +
+          `${esc(r.app.capabilities.level)} risk.` +
+          (r.policyNote ? `<div style="margin-top:8px">⚠ ${esc(r.policyNote)}</div>` : '') +
+          (r.warnings?.length ? r.warnings.map(w => `<div>· ${esc(w)}</div>`).join('') : '') +
+          `<div style="margin-top:8px">${esc(r.nextStep)}</div>` +
+          // Show what the platform will actually receive, after clamping — a
+          // maintainer should see exactly what their request was reduced to.
+          `<pre>${esc(r.renderedYaml)}</pre>`;
+      } catch (error) {
+        box.classList.add('bad');
+        box.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
     async function refreshOps() {
       try {
         const m = await api('/api/metrics?hours=24');
@@ -551,8 +625,26 @@
       setTimeout(() => card.classList.remove('deep-link'), 2400);
     }
 
+    /**
+     * Recover a trial the visitor already has running.
+     *
+     * Without this, closing the tab stranded the trial: still running, still
+     * billing, unreachable — and because one visitor may hold only one, they
+     * could not claim another either.
+     */
+    async function resumeTrial() {
+      try {
+        const { trial } = await api('/api/trials/mine');
+        if (trial?.url) {
+          showReady(trial);
+          banner('Reconnected to the trial you already had running.');
+        }
+      } catch { /* no trial, or offline — the gallery is the right default */ }
+    }
+
     loadCatalog()
       .then(handleDeepLink)
+      .then(resumeTrial)
       .catch(error => banner(`Catalog unavailable: ${error.message}`, 'err'));
     refreshPool(); refreshLiveBuild(); refreshOps();
     setInterval(() => { refreshPool(); refreshLiveBuild(); }, 5000);

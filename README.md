@@ -187,7 +187,15 @@ by reading them:
 
 ## Platform notes discovered while building
 
-Findings from working against the live API, each of which cost a debugging cycle. Kept here because they are not in the documentation.
+Sixteen behaviours found working against the live API, none of them documented.
+Nine share one shape: **the API accepts the input, returns 2xx, and the failure
+surfaces minutes later as a service that is stuck, silent or unreachable.**
+
+The full write-up — with reproductions, the fix that worked, and suggestions —
+is in **[FINDINGS.md](FINDINGS.md)**. Architecture and the reasoning behind it
+is in **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
+A summary:
 
 | Finding | Detail |
 |---|---|

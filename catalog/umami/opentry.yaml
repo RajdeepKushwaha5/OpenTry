@@ -43,8 +43,8 @@ app:
 
   firstSteps:
     - Sign in with the credentials below
-    - Open Settings → Websites to add a site and get its tracking script
-    - The Dashboard shows traffic once events start arriving
+    - A demo website is already registered — open it from Websites
+    - Settings → Websites gives you its tracking script
 
 trial:
   ttlMinutes: 30
@@ -138,3 +138,34 @@ verify:
     path: /login
     expectBodyContains: umami
     timeoutMs: 90000
+
+# -----------------------------------------------------------------------------
+# Seeding — register a website so the dashboard is not empty.
+#
+# Umami opens on "you have no websites yet", which is an accurate but useless
+# first impression: there is nothing to click and no way to tell the app is
+# working. Creating one website gives the visitor somewhere to go.
+#
+# Two steps because the API is token-authenticated: log in with the default
+# credentials, capture the bearer token, then use it.
+# -----------------------------------------------------------------------------
+seed:
+  - name: Sign in
+    method: POST
+    path: /api/auth/login
+    expectStatus: [200]
+    body:
+      username: admin
+      password: umami
+    capture:
+      token: token
+
+  - name: Register a demo website
+    method: POST
+    path: /api/websites
+    expectStatus: [200, 201]
+    headers:
+      authorization: Bearer ${token}
+    body:
+      name: OpenTry Demo Site
+      domain: demo.opentry.dev
