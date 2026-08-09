@@ -10,7 +10,7 @@ Built for [The Zerops Challenge](https://www.wemakedevs.org/hackathons/zerops).
 
 ## The problem
 
-You find an open-source project you might want to use — n8n, Ghost, Metabase, Plausible. Your options today:
+You find an open-source project you might want to use — Metabase, Umami, Vikunja, n8n. Your options today:
 
 - a **shared public demo**, usually read-only or already trashed by other visitors
 - **`docker compose up`** — install Docker, read the docs, wait, debug why it failed
@@ -94,6 +94,18 @@ Free, anonymous, disposable infrastructure needs limits that don't depend on goo
 
 ## The catalog
 
+Four apps, each verified end to end against real infrastructure:
+
+| App | Provision time | Risk tier | Seeding lands you on |
+|---|---|---|---|
+| **Umami** | 264s | standard | signed in, a demo site registered |
+| **Metabase** | 264s | elevated | signed in, Sample Database ready |
+| **Vikunja** | 303s | standard | signed in, a project with a task on the board |
+| **n8n** | 310s | elevated | signed in as the owner |
+
+Elevated-tier apps can make outbound network requests, so they are withheld
+unless the operator opts in — see [ARCHITECTURE.md](ARCHITECTURE.md#safety).
+
 One file per app. Maintainers add **nothing** to their own repository — the manifest supplies the build config via Zerops' `zeropsYaml`.
 
 ```yaml
@@ -150,7 +162,7 @@ See [DEPLOY.md](DEPLOY.md) for the full guide.
 ## Tests
 
 ```bash
-npm test        # 43 tests, no dependencies beyond Node
+npm test        # 65 tests, no dependencies beyond Node
 npm run test:db # concurrency tests — needs a real Postgres
 ```
 
