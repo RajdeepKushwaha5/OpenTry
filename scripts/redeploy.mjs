@@ -21,6 +21,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ZeropsClient, pollUntil } from '../packages/provisioner/src/zerops-client.mjs';
@@ -103,19 +104,34 @@ if (!buildable.length) {
   die(`Nothing to rebuild. Services present: ${services.map((s) => s.name).join(', ')}`);
 }
 
+/**
+ * `buildFromGit` is mandatory, and its absence is reported as
+ * `serviceStackNotFound` — a 400 naming the one thing that IS correct. Read
+ * the repo out of the import manifest so there is a single source of truth.
+ */
+const manifest = await readFile(join(ROOT, 'zerops-import.yaml'), 'utf8');
+const repo = manifest.match(/buildFromGit:\s*(\S+)/)?.[1];
+if (!repo) die('No buildFromGit URL found in zerops-import.yaml.');
+log(`building from ${repo}`);
+
 for (const svc of buildable) {
-  await client.request('PUT', `/service-stack/${svc.id}/trigger-pipeline`, {});
+  await client.request('PUT', `/service-stack/${svc.id}/trigger-pipeline`, { buildFromGit: repo });
   log(`pipeline triggered: ${svc.name}`);
 }
 
 log('building (this takes a few minutes)...');
+// A service is ACTIVE for a moment after the trigger, before the build takes
+// it away. Returning on the first ACTIVE would report success against the old
+// code, so wait for it to leave ACTIVE first and only then for it to return.
+const left = new Set();
 await pollUntil(
   async () => {
     const now = await client.listServices(project.id);
     const watched = now.filter((s) => buildable.some((b) => b.id === s.id));
-    const states = watched.map((s) => `${s.name}=${s.status}`).join(' ');
-    log(`  ${states}`);
-    return watched.every((s) => s.status === 'ACTIVE') ? watched : null;
+    for (const s of watched) if (s.status !== 'ACTIVE') left.add(s.id);
+    log(`  ${watched.map((s) => `${s.name}=${s.status}`).join(' ')}`);
+    const done = watched.every((s) => s.status === 'ACTIVE' && left.has(s.id));
+    return done ? watched : null;
   },
   { timeoutMs: 12 * 60 * 1000, intervalMs: 15_000 },
 );

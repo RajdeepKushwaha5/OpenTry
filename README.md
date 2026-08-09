@@ -2,7 +2,7 @@
 
 **Try any open-source app in seconds. Private, real, disposable — no signup, no Docker.**
 
-**Live: https://api-2cb3-3000.prg1.zerops.app**
+**Live: https://api-2d72-3000.prg1.zerops.app**
 
 Built for [The Zerops Challenge](https://www.wemakedevs.org/hackathons/zerops).
 
