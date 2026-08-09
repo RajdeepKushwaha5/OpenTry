@@ -112,7 +112,13 @@ services:
       # How many finished trials to keep idling per app.
       OPENTRY_WARM_PER_APP: "1"
       # Hard ceiling on trials alive at once — the blast-radius control.
-      OPENTRY_MAX_CONCURRENT_TRIALS: "6"
+      #
+      # Sized against the catalog: 4 apps warm + 2 claims = 6, which is exactly
+      # at the cap, so a third visitor would find an empty pool with no slot to
+      # backfill into until a 30-minute TTL expired. 10 leaves real headroom.
+      # Every slot is ~$0.0001/min idle, so the cost of the margin is noise
+      # compared to a demo stalling.
+      OPENTRY_MAX_CONCURRENT_TRIALS: "10"
 
 
       # Optional: POST alerts here when provisioning health changes.
