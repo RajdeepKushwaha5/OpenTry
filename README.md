@@ -4,7 +4,7 @@
 
 OpenTry helps developers evaluate self-hosted applications without creating a cloud account, installing Docker, or sharing a polluted public demo. One click hands the visitor an isolated application, managed database, public URL, and temporary admin login; after 30 minutes, the entire Zerops project is destroyed.
 
-### [Launch OpenTry →](https://api-2d72-3000.prg1.zerops.app)
+### [Launch OpenTry →](https://api-2d72-3000.prg1.zerops.app)  ·  [Watch the 3-minute demo →](https://www.youtube.com/watch?v=IE8_swBjaV4)
 
 ![OpenTry: claim a real disposable trial in seconds, then destroy it](docs/preview.svg)
 
@@ -20,6 +20,7 @@ OpenTry helps developers evaluate self-hosted applications without creating a cl
 | | |
 |---|---|
 | **Live application** | <https://api-2d72-3000.prg1.zerops.app> |
+| **Demo video** | <https://www.youtube.com/watch?v=IE8_swBjaV4> |
 | **Source** | <https://github.com/RajdeepKushwaha5/OpenTry> |
 | **Live pool state** | [`/api/pool`](https://api-2d72-3000.prg1.zerops.app/api/pool) — warm trials right now |
 | **Live metrics** | [`/api/metrics`](https://api-2d72-3000.prg1.zerops.app/api/metrics) — real provisioning times and estimated spend |
@@ -469,17 +470,6 @@ Anyone may validate a manifest, but only reviewed files in `catalog/` are provis
 
 Zerops does not expose per-project invoice totals through the API used here. OpenTry calculates an upper-bound estimate from the manifest's declared resources and published prices, labels it as estimated, and keeps the pricing variables configurable.
 
-## Known limitations
-
-- Zerops provides inbound firewalling but no per-trial egress filter. Elevated applications are therefore an explicit, higher-risk operator choice.
-- Anonymous visitor fingerprints discourage casual duplication but are not authentication. A determined user can change request characteristics or use another network; proof-of-work and the global ceiling bound the financial impact.
-- Warm trials spend a small amount while idle, and an empty pool exposes the underlying provisioning wait.
-- Docker services run in VMs, so their boot and image-pull times vary substantially.
-- `buildFromGit` requires a publicly reachable repository in the verified deployment path.
-- The published Import YAML schema and the live API disagree on some accepted service-type spellings. OpenTry reports these as warnings and records live-tested behavior.
-- The PostgreSQL concurrency suite is separate from the portable test command and cannot run without a real database.
-- There is no automated CI/CD workflow yet.
-
 ## Further documentation
 
 - [Architecture and threat model](ARCHITECTURE.md)
@@ -488,10 +478,6 @@ Zerops does not expose per-project invoice totals through the API used here. Ope
 - [Zerops Import YAML reference](https://docs.zerops.io/references/import)
 - [Zerops REST API reference](https://docs.zerops.io/references/api)
 - [Zerops pricing](https://docs.zerops.io/company/pricing)
-
-## AI use
-
-Claude and OpenAI Codex were used for code generation, debugging, review, UI work, testing, and documentation. Architecture and security decisions were validated against the implementation, the official Zerops documentation, the published schema, and observed live-platform behavior. AI output was treated as a draft to verify, not as evidence by itself.
 
 ---
 
