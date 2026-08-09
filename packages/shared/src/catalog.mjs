@@ -10,6 +10,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseManifest } from './manifest.mjs';
+import { logoFor, letterMark } from './logos.mjs';
 
 export async function loadCatalog(catalogDir, { log = console.warn } = {}) {
   const catalog = new Map();
@@ -46,7 +47,16 @@ export function publicCatalog(catalog) {
       ...m.app,
       ttlMinutes: m.trial.ttlMinutes,
       capabilities: m.app.capabilities,
-      services: m.services.map((s) => ({ hostname: s.hostname, type: s.type })),
+      // Inline mark for the app, plus one per service type. Sent with the
+      // catalog so the gallery renders in a single round trip and never shows
+      // a logo popping in late.
+      logo: logoFor(m.app.logo ?? m.app.slug)?.path ?? null,
+      letter: letterMark(m.app.name),
+      services: m.services.map((s) => ({
+        hostname: s.hostname,
+        type: s.type,
+        logo: logoFor(s.type)?.path ?? null,
+      })),
       checks: m.verify.map((v) => v.name),
     }));
 }

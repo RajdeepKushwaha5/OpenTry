@@ -51,7 +51,7 @@
     .workspace{padding:28px;min-width:0}.banner{display:none;padding:12px 14px;margin-bottom:18px;border:1px solid;font:400 11px var(--mono)}.banner.show{display:block}.banner.warn{background:#fff7dc;border-color:#d9b351;color:#815a00}.banner.err{background:#fff0ee;border-color:#e49a93;color:#9c2e24}
     .workspace-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}.workspace-heading h3{font:800 23px var(--display);letter-spacing:-.035em;margin:0}.workspace-heading span{font:400 10px var(--mono);color:var(--muted)}
     .catalog-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.app-card{border:1px solid var(--line);background:var(--white);padding:20px;display:flex;flex-direction:column;justify-content:space-between;min-height:270px;transition:.18s ease}.app-card:hover{border-color:var(--ink);transform:translateY(-3px);box-shadow:7px 7px 0 rgba(7,17,14,.09)}
-    .app-card-head{display:flex;justify-content:space-between;gap:14px;align-items:start}.app-identity{display:flex;gap:11px;align-items:center}.app-mark{width:36px;height:36px;display:grid;place-items:center;color:white;font:700 16px var(--display);border-radius:8px}.app-title{font:800 18px var(--display);letter-spacing:-.03em}.app-meta{font:400 9px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.app-desc{color:var(--muted);font-size:13px;line-height:1.5;margin:16px 0}.app-pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}.app-pill{border:1px solid var(--line);padding:3px 6px;font:400 9px var(--mono);background:#f5f6f1}.app-notice{font-size:11px;color:#845e00;border-left:2px solid var(--amber);padding-left:8px;margin:10px 0}.card-btn{width:100%;margin-top:10px}.embed-link{width:100%;margin-top:7px;background:none;border:0;color:var(--muted);font:400 10px var(--mono);text-decoration:underline;cursor:pointer;padding:4px}.embed-link:hover{color:var(--ink)}
+    .app-card-head{display:flex;justify-content:space-between;gap:14px;align-items:start}.app-identity{display:flex;gap:11px;align-items:center}.app-mark{width:36px;height:36px;display:grid;place-items:center;color:white;font:700 16px var(--display);border-radius:8px;overflow:hidden}.app-title{font:800 18px var(--display);letter-spacing:-.03em}.app-meta{font:400 9px var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.app-desc{color:var(--muted);font-size:13px;line-height:1.5;margin:16px 0}.app-pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}.app-pill{border:1px solid var(--line);padding:3px 6px;font:400 9px var(--mono);background:#f5f6f1;display:inline-flex;align-items:center;gap:4px}.app-pill svg{opacity:.55;flex:none}.app-notice{font-size:11px;color:#845e00;border-left:2px solid var(--amber);padding-left:8px;margin:10px 0}.card-btn{width:100%;margin-top:10px}.embed-link{width:100%;margin-top:7px;background:none;border:0;color:var(--muted);font:400 10px var(--mono);text-decoration:underline;cursor:pointer;padding:4px}.embed-link:hover{color:var(--ink)}
     .embed-panel{border:1px solid var(--line);background:#f5f6f1;padding:14px;margin-top:10px}.embed-panel img{display:block;margin-bottom:10px}.embed-panel code{display:block;background:var(--ink);color:var(--mint);padding:10px;font:400 10px/1.6 var(--mono);word-break:break-all;white-space:pre-wrap}.app-card.deep-link{animation:deepLink 2.4s ease-out}@keyframes deepLink{0%,100%{box-shadow:7px 7px 0 rgba(7,17,14,0)}18%{box-shadow:7px 7px 0 var(--lime);border-color:var(--ink)}}
     .stage{border:1px solid var(--line);background:var(--white);padding:28px}.stage-kicker{font:700 10px var(--mono);color:var(--muted);letter-spacing:.12em;text-transform:uppercase}.stage h2{font:800 34px/1.05 var(--display);letter-spacing:-.05em;margin:10px 0}.stage-note{color:var(--muted);font-size:14px}.ready-url{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--ink);color:var(--lime);padding:15px;margin:20px 0;font:400 12px var(--mono);overflow:hidden}.ready-url a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.credentials{display:grid;grid-template-columns:120px 1fr;border:1px solid var(--line);margin:0 0 20px}.credentials dt,.credentials dd{margin:0;padding:10px 12px;border-bottom:1px solid var(--line);font:400 11px var(--mono)}.credentials dt{background:#eff1eb;color:var(--muted)}.credentials dd{font-weight:700;user-select:all}.credentials>*:nth-last-child(-n+2){border-bottom:0}.ready-bottom{display:flex;justify-content:space-between;align-items:end;gap:20px;flex-wrap:wrap}.countdown{font:700 42px/1 var(--mono);letter-spacing:-.06em}.countdown.low{color:var(--amber)}.count-label{font:400 9px var(--mono);color:var(--muted);text-transform:uppercase;margin-top:7px}.ready-actions{display:flex;gap:9px;flex-wrap:wrap}
     .provision-stat{background:#eff1eb;border-left:3px solid var(--ink);padding:11px 14px;margin:0 0 18px;font:400 11px/1.6 var(--mono);color:var(--muted)}.provision-stat b{color:var(--ink);font-weight:700}
@@ -248,8 +248,32 @@
     function esc(value) {
       return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     }
+    /**
+     * Human label for a Zerops service type.
+     *
+     * The "@" in postgresql@16 renders ambiguously at 9px in a mono face —
+     * it read as "Postgresa16" and "Docker&26.1" on the cards. Split on it
+     * instead of substituting inside the raw string.
+     */
+    const TYPE_NAMES = {
+      postgresql: 'Postgres', mariadb: 'MariaDB', valkey: 'Valkey', keydb: 'KeyDB',
+      clickhouse: 'ClickHouse', meilisearch: 'Meilisearch', typesense: 'Typesense',
+      elasticsearch: 'Elasticsearch', qdrant: 'Qdrant', nats: 'NATS', kafka: 'Kafka',
+      docker: 'Docker', nodejs: 'Node', python: 'Python', go: 'Go', java: 'Java',
+      rust: 'Rust', ubuntu: 'Ubuntu', alpine: 'Alpine', static: 'Static',
+      objectstorage: 'Object storage', 'object-storage': 'Object storage',
+    };
     function typeLabel(type) {
-      return type.replace('postgresql', 'Postgres').replace('docker', 'Docker').replace('nodejs', 'Node');
+      const [name, version] = String(type).split('@');
+      const base = TYPE_NAMES[name.split(':')[0]] || name;
+      return version ? `${base} ${version}` : base;
+    }
+
+    /** Inline brand mark, or a lettermark when we have no logo for it. */
+    function markSvg(path, size = 15) {
+      return path
+        ? `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" aria-hidden="true"><path d="${path}"/></svg>`
+        : '';
     }
 
     async function loadCatalog() {
@@ -259,7 +283,7 @@
         const card = document.createElement('article');
         card.className = 'app-card';
         const initial = esc(app.name.slice(0, 1).toUpperCase());
-        card.innerHTML = `<div><div class="app-card-head"><div class="app-identity"><span class="app-mark" style="background:${esc(app.accent)}">${initial}</span><div><div class="app-title">${esc(app.name)}</div><div class="app-meta">${esc(app.category)} · ${esc(app.license || 'open source')}</div></div></div><span class="app-pill">${app.ttlMinutes} min</span></div><p class="app-desc">${esc(app.tagline || app.description)}</p><div class="app-pills">${app.services.map(service => `<span class="app-pill">${esc(service.hostname)} / ${esc(typeLabel(service.type))}</span>`).join('')}</div>${app.capabilities?.notice ? `<p class="app-notice">${esc(app.capabilities.notice)}</p>` : ''}</div><button class="btn btn-dark card-btn" data-slug="${esc(app.slug)}">Launch private ${esc(app.name)} <span>→</span></button><button class="embed-link" data-embed="${esc(app.slug)}">Add this badge to your README</button>`;
+        card.innerHTML = `<div><div class="app-card-head"><div class="app-identity"><span class="app-mark" style="${app.logo ? `color:${esc(app.accent)};background:#fff;border:1px solid var(--line)` : `background:${esc(app.accent)}`}">${app.logo ? markSvg(app.logo, 20) : initial}</span><div><div class="app-title">${esc(app.name)}</div><div class="app-meta">${esc(app.category)} · ${esc(app.license || 'open source')}</div></div></div><span class="app-pill">${app.ttlMinutes} min</span></div><p class="app-desc">${esc(app.tagline || app.description)}</p><div class="app-pills">${app.services.map(service => `<span class="app-pill">${markSvg(service.logo, 10)}${esc(service.hostname)} · ${esc(typeLabel(service.type))}</span>`).join('')}</div>${app.capabilities?.notice ? `<p class="app-notice">${esc(app.capabilities.notice)}</p>` : ''}</div><button class="btn btn-dark card-btn" data-slug="${esc(app.slug)}">Launch private ${esc(app.name)} <span>→</span></button><button class="embed-link" data-embed="${esc(app.slug)}">Add this badge to your README</button>`;
         card.querySelector('.embed-link').addEventListener('click', event => showEmbed(event.currentTarget));
         const button = card.querySelector('.card-btn');
         button.addEventListener('click', () => claim(button.dataset.slug));

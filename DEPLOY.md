@@ -117,6 +117,18 @@ npm run gonogo:keep -- --app <slug>  # leave it up to click around
 npm run gonogo:cleanup             # remove strays
 ```
 
+### Logos
+
+Marks live in `packages/shared/src/logos.mjs` as inline single-path SVG, so the
+page makes no external requests and a broken CDN can never produce a gallery of
+broken images. To add one, take the icon from
+[simple-icons](https://simpleicons.org) (their icon files are CC0; the marks
+remain their owners' trademarks) and add an entry keyed by your app slug.
+
+An app with no entry falls back to a lettermark — a missing logo is a cosmetic
+gap, never a broken card. Service types (`postgresql`, `docker`, …) resolve the
+same way, so their pills get marks automatically.
+
 **Docker images are the easy path** — no build step, and most projects publish
 one. Copy `catalog/n8n/opentry.yaml` as a starting point. Two rules that are
 easy to get wrong and fail silently:
