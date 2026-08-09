@@ -335,7 +335,7 @@ describe('a verify check cannot address another host', () => {
     // lifecycle resolves this against the trial URL, and new URL() drops the
     // base for an absolute path — the controller would fetch the other host.
     for (const p of ['https://attacker.example/x', '//attacker.example/x', 'relative']) {
-      assert.throws(() => withCheck(p), /path must be local/, p);
+      assert.throws(() => withCheck(p), /path must stay on the trial/, p);
     }
   });
 

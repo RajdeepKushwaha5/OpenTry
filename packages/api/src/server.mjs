@@ -19,6 +19,13 @@ import { LIMITS } from '../../shared/src/limits.mjs';
 import { LeaseStore, visitorFingerprint, LeaseState } from '../../controller/src/store.mjs';
 import { issueChallenge, verifySolution, DIFFICULTY } from '../../shared/src/proof-of-work.mjs';
 import { renderBadge, badgeSnippets } from './badge.mjs';
+import {
+  bucketFor,
+  canViewTrial,
+  canDestroyTrial,
+  publicEvent,
+  readyPayload,
+} from './authz.mjs';
 import { parseManifest, renderImportYaml, generateTrialId } from '../../shared/src/manifest.mjs';
 import { validateImportYaml } from '../../shared/src/validate-import.mjs';
 import { Metrics, Health } from '../../controller/src/metrics.mjs';
@@ -60,28 +67,11 @@ const RATE_MAX = Number(process.env.OPENTRY_RATE_MAX ?? 30);
  * the ceiling was written for, and proof-of-work sits in front of it too.
  */
 const RATE_POLL_MAX = Number(process.env.OPENTRY_RATE_POLL_MAX ?? 240);
-const POLL_PATHS = new Set([
-  '/api/pool',
-  '/api/pool/building',
-  '/api/metrics',
-  '/api/health/deep',
-  '/api/catalog',
-  '/api/trials/mine',
-]);
-const TRIAL_READ_RE = /^\/api\/trials\/[^/]+(\/events)?$/;
-
-/** Read-only polling, or something that can spend money? */
-function bucketFor(req) {
-  if (req.method !== 'GET') return { name: 'write', max: RATE_MAX };
-  if (POLL_PATHS.has(req.path) || TRIAL_READ_RE.test(req.path)) {
-    return { name: 'poll', max: RATE_POLL_MAX };
-  }
-  return { name: 'read', max: RATE_MAX };
-}
+const RATE_LIMITS = { strict: RATE_MAX, poll: RATE_POLL_MAX };
 
 async function rateLimit(req, res, next) {
   try {
-    const bucket = bucketFor(req);
+    const bucket = bucketFor(req, RATE_LIMITS);
     const key = `${bucket.name}:${visitorFingerprint(req)}`;
     const { allowed, retryAfterSeconds } = await store.hitRateLimit(key, {
       windowMs: RATE_WINDOW_MS,
@@ -424,7 +414,7 @@ app.get('/api/trials/:id', async (req, res) => {
   // password, and trial ids are not secret — /api/pool/building publishes the
   // id of whatever is being provisioned. Without this, anyone could read that
   // id and collect the credentials of a warm trial before a visitor claimed it.
-  if (lease.state !== LeaseState.CLAIMED || lease.visitor_hash !== visitorFingerprint(req)) {
+  if (!canViewTrial(lease, visitorFingerprint(req))) {
     return res.status(403).json({ error: 'Not your trial' });
   }
   res.json({ trial: shape(lease) });
@@ -502,13 +492,7 @@ app.get('/api/trials/:id/events', async (req, res) => {
         lastId = e.id;
         // Only the human-readable timeline. Event metadata carries internal
         // project ids and URLs the controller recorded; none of it is public.
-        send(e.id, 'step', {
-          id: e.id,
-          at_ms: e.at_ms,
-          step: e.step,
-          status: e.status,
-          message: e.message,
-        });
+        send(e.id, 'step', publicEvent(e));
       }
 
       const current = await store.getLease(req.params.id);
@@ -517,14 +501,7 @@ app.get('/api/trials/:id/events', async (req, res) => {
         // can see real provisioning happen. A warm trial has NOT been claimed,
         // so its URL and generated password must not travel down it. Claiming
         // through POST /api/trials is the only way to receive them.
-        const owned =
-          current.state === LeaseState.CLAIMED &&
-          current.visitor_hash === visitorFingerprint(req);
-        send(
-          lastId + 1,
-          'ready',
-          owned ? shape(current) : { id: current.id, app: current.app_slug, state: 'ready' },
-        );
+        send(lastId + 1, 'ready', readyPayload(current, visitorFingerprint(req), shape));
         break;
       }
       if (current && ['FAILED', 'DESTROYED'].includes(current.state)) {
@@ -568,7 +545,7 @@ app.delete('/api/trials/:id', async (req, res) => {
   // for CLAIMED leases, so setting it on a warm one destroyed nothing while
   // still returning `destroyed: true` and a cost receipt for someone else's
   // trial. Reporting a teardown that did not happen is its own bug.
-  if (lease.state !== LeaseState.CLAIMED || lease.visitor_hash !== visitorFingerprint(req)) {
+  if (!canDestroyTrial(lease, visitorFingerprint(req))) {
     return res.status(403).json({ error: 'Not your trial' });
   }
 

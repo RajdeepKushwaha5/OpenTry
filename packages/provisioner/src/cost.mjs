@@ -13,6 +13,7 @@
  *   dedicated CPU  $6.00 / core
  *   RAM            $0.75 / 0.25 GB   -> $3.00 / GB
  *   disk           $0.05 / 0.5 GB    -> $0.10 / GB
+ *   object storage $0.01 / GB stored
  *   Lightweight project core: free
  *
  * Billing is per minute, deducted hourly. We model per minute.
@@ -25,7 +26,15 @@ export const RATES_30D = Object.freeze({
   dedicatedCpuPerCore: Number(process.env.PRICE_DEDICATED_CPU_CORE_30D ?? 6.0),
   ramPerGb: Number(process.env.PRICE_RAM_PER_GB_30D ?? 3.0),
   diskPerGb: Number(process.env.PRICE_DISK_PER_GB_30D ?? 0.1),
+  objectStoragePerGb: Number(process.env.PRICE_OBJECT_STORAGE_PER_GB_30D ?? 0.01),
 });
+
+/** Object storage is billed on stored volume and has no container at all. */
+function objectStorageCostPerMinute(svc) {
+  const gb = Number(svc.objectStorageSize);
+  const size = Number.isFinite(gb) && gb > 0 ? gb : 1;
+  return (size * RATES_30D.objectStoragePerGb) / MINUTES_PER_30_DAYS;
+}
 
 /**
  * Cost per minute for one service at a given allocation.
@@ -69,6 +78,17 @@ function largest(values, fallback) {
   return nums.length ? Math.max(...nums) : fallback;
 }
 
+/**
+ * Object storage has no `verticalAutoscaling` block, so `resourcesOf` would
+ * hand it the CPU/RAM/disk fallback and price a bucket like a container —
+ * wrong in both directions and for the wrong reason. There is none in the
+ * current catalog, which is exactly why this would have gone unnoticed until
+ * the first manifest that used one.
+ */
+function isObjectStorageService(svc) {
+  return /^object-?storage$/i.test(String(svc.type ?? '')) || svc.objectStorageSize !== undefined;
+}
+
 function resourcesOf(svc) {
   const va = svc.verticalAutoscaling ?? {};
   return {
@@ -84,7 +104,9 @@ export function estimateCostUsd(services, lifetimeMs) {
   let perMinute = 0;
 
   for (const svc of services) {
-    perMinute += costPerMinute(resourcesOf(svc));
+    perMinute += isObjectStorageService(svc)
+      ? objectStorageCostPerMinute(svc)
+      : costPerMinute(resourcesOf(svc));
   }
 
   return Number((perMinute * minutes).toFixed(4));
@@ -103,7 +125,9 @@ export function formatCost(usd) {
 export function monthlyEquivalentUsd(services) {
   let perMinute = 0;
   for (const svc of services) {
-    perMinute += costPerMinute(resourcesOf(svc));
+    perMinute += isObjectStorageService(svc)
+      ? objectStorageCostPerMinute(svc)
+      : costPerMinute(resourcesOf(svc));
   }
   return Number((perMinute * MINUTES_PER_30_DAYS).toFixed(2));
 }

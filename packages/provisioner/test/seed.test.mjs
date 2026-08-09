@@ -109,8 +109,13 @@ describe('a seed step cannot address anything but the trial', () => {
       '//attacker.example/collect',
       'file:///etc/passwd',
       'relative/path',
+      // The one a leading-slash regex lets through: the URL parser treats a
+      // backslash as a separator too, so this resolves to https://attacker.example/x
+      // while starting with exactly one forward slash.
+      '/\\attacker.example/x',
+      '\\\\attacker.example/x',
     ]) {
-      assert.throws(() => step({ path }), /path must be local/, path);
+      assert.throws(() => step({ path }), /path must stay on the trial/, path);
     }
     assert.equal(step({ path: '/api/setup' }).path, '/api/setup');
   });

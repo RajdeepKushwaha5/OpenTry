@@ -188,6 +188,36 @@ export class ZeropsClient {
   // --- projects -----------------------------------------------------------
 
   /** GET /client/{clientId}/project */
+  /**
+   * Look for a project by name, tolerating list-read failures and lag.
+   *
+   * Returns one of:
+   *   {status:'found', id}   it exists
+   *   {status:'absent'}      the list was read successfully and it is not there
+   *   {status:'unknown'}     the list could not be read
+   *
+   * The distinction is the whole point. Treating a failed read as 'absent' is
+   * how a reconciling retry becomes a duplicating one.
+   *
+   * Retries the LOOKUP a few times because project creation is not necessarily
+   * visible to a list the instant the import returns; a single miss is not
+   * evidence of absence when we are still inside that window.
+   */
+  async #findProjectByName(name, { tries = 3, gapMs = 1500 } = {}) {
+    let everRead = false;
+    for (let i = 0; i < tries; i++) {
+      try {
+        const hit = (await this.listProjects()).find((p) => p.name === name);
+        everRead = true;
+        if (hit) return { status: 'found', id: hit.id };
+      } catch {
+        // fall through to the next attempt
+      }
+      if (i < tries - 1) await new Promise((r) => setTimeout(r, gapMs));
+    }
+    return { status: everRead ? 'absent' : 'unknown' };
+  }
+
   async listProjects() {
     const clientId = await this.getClientId();
     return unwrapList(await this.request('GET', `/client/${clientId}/project`));
@@ -228,6 +258,7 @@ export class ZeropsClient {
   async importProject(yamlString, { projectName, attempts = 3 } = {}) {
     const clientId = await this.getClientId();
     const path = `/client/${clientId}/project/import`;
+    const method0 = 'POST';
     let lastErr;
 
     for (let attempt = 0; attempt < attempts; attempt++) {
@@ -239,13 +270,21 @@ export class ZeropsClient {
           err.transient === true || err.status === 429 || (err.status >= 500 && err.status < 600);
         if (!ambiguous || !projectName) throw err;
 
-        // Did it land after all?
-        const existing = await this.listProjects()
-          .then((ps) => ps.find((p) => p.name === projectName))
-          .catch(() => null);
-        if (existing) {
-          this.onRetry?.({ method: 'POST', path, attempt: attempt + 1, reconciled: existing.id });
-          return { projectId: existing.id, reconciled: true };
+        // Did it land after all? This has to distinguish three outcomes, not
+        // two: it exists (adopt it), it definitively does not (safe to retry),
+        // or we could not find out (retrying might duplicate, so do not).
+        const found = await this.#findProjectByName(projectName);
+        if (found.status === 'found') {
+          this.onRetry?.({ method: 'POST', path, attempt: attempt + 1, reconciled: found.id });
+          return { projectId: found.id, reconciled: true };
+        }
+        if (found.status === 'unknown') {
+          throw new ZeropsError(
+            `${method0} ${path} failed and the project list could not be read, so it is ` +
+              `unknown whether "${projectName}" was created. Not retrying: a duplicate ` +
+              `project would bill with no lease pointing at it. Original error: ${err.message}`,
+            { path, status: err.status, cause: err },
+          );
         }
 
         if (attempt === attempts - 1) break;

@@ -25,7 +25,14 @@
  * may opt into `required: true` when the trial is genuinely useless without it.
  */
 
-import { assertLocalPath } from '../../shared/src/local-path.mjs';
+import { assertLocalPath, resolveOnTrial } from '../../shared/src/local-path.mjs';
+
+/** A positive, finite millisecond count — or the default, never NaN. */
+function boundedMs(value, ceiling, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(n, ceiling);
+}
 
 /** Capture names that would poison the scope object rather than fill it. */
 const UNSAFE_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
@@ -71,11 +78,10 @@ export async function runSeed({ baseUrl, steps = [], vars = {}, emit = () => {} 
     emit({ step: `seed:${label}`, status: 'running', message: label });
 
     try {
-      // Re-checked here, not only at parse time: `path` is interpolated with
-      // captured values, so a response body could otherwise steer the request.
-      const path = interpolate(step.path, scope);
-      assertLocalPath(path, step.name);
-      const url = new URL(path, baseUrl).toString();
+      // Resolved and origin-checked here, not only at parse time: `path` is
+      // interpolated with captured values, so a response body could otherwise
+      // steer the request somewhere the parsed manifest never mentioned.
+      const url = resolveOnTrial(interpolate(step.path, scope), baseUrl, `seed "${label}"`);
       const body = step.body ? interpolate(step.body, scope) : undefined;
 
       const res = await fetch(url, {
@@ -147,11 +153,17 @@ export function normaliseSeedStep(step, i) {
     }
   }
 
-  const expectStatus = Array.isArray(step.expectStatus)
-    ? step.expectStatus.map(Number)
-    : step.expectStatus != null
-      ? [Number(step.expectStatus)]
-      : [200, 201, 202, 204];
+  // Never let a bad value become NaN here: a step whose expected status is NaN
+  // can never pass, and it reports as an unexpected response rather than as the
+  // manifest error it is.
+  let expectStatus = [200, 201, 202, 204];
+  if (step.expectStatus != null) {
+    const list = (Array.isArray(step.expectStatus) ? step.expectStatus : [step.expectStatus]).map(Number);
+    if (!list.length || list.some((n) => !Number.isInteger(n) || n < 100 || n > 599)) {
+      throw new Error(`seed[${i}] "${name}": expectStatus must be HTTP status codes`);
+    }
+    expectStatus = list;
+  }
 
   return {
     name,
@@ -162,6 +174,6 @@ export function normaliseSeedStep(step, i) {
     capture: step.capture ?? {},
     expectStatus,
     required: step.required === true,
-    timeoutMs: Math.min(Number(step.timeoutMs ?? 20_000), 60_000),
+    timeoutMs: boundedMs(step.timeoutMs, 60_000, 20_000),
   };
 }

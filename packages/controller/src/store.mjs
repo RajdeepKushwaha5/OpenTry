@@ -110,6 +110,21 @@ export class LeaseStore {
     );
   }
 
+  /**
+   * Attach a failure reason without changing state.
+   *
+   * Separate from markFailed because the reaper needs to record WHY it is
+   * tearing something down while driving its own PROVISIONING -> DESTROYING ->
+   * DESTROYED sequence. Only fills an empty error, so a specific diagnosis
+   * from the provisioner is never overwritten by a generic one from cleanup.
+   */
+  recordError(id, error) {
+    return this.pool.query(
+      `UPDATE leases SET error = $2 WHERE id = $1 AND error IS NULL`,
+      [id, String(error).slice(0, 2000)],
+    );
+  }
+
   markDestroyed(id, { estimatedCost } = {}) {
     return this.pool.query(
       `UPDATE leases SET state = $2, destroyed_at = now(), estimated_cost = $3 WHERE id = $1`,
@@ -238,6 +253,31 @@ export class LeaseStore {
         LeaseState.FAILED,
         LeaseState.DESTROYING,
       ],
+    );
+    return rows;
+  }
+
+  /**
+   * Leases that never got as far as a project, and never will.
+   *
+   * `findReapable` requires `project_id IS NOT NULL`, because its job is to
+   * delete infrastructure and there is none to delete here. But `activeCount`
+   * counts PROVISIONING rows whether or not they carry a project id, so a
+   * controller that crashed between INSERT and the import response leaves a
+   * row that occupies a slot against the global ceiling forever. Enough of
+   * those and the pool stops provisioning entirely, with nothing in the
+   * Zerops account to explain why.
+   *
+   * These are closed out in the database only — deliberately no API calls,
+   * since by definition nothing was created.
+   */
+  async findStaleWithoutProject({ provisionTimeoutMs = 720_000 } = {}) {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM leases
+        WHERE project_id IS NULL
+          AND state = $1
+          AND created_at < now() - ($2 || ' milliseconds')::interval`,
+      [LeaseState.PROVISIONING, String(provisionTimeoutMs)],
     );
     return rows;
   }

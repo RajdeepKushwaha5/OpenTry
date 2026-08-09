@@ -82,8 +82,10 @@ the reaper can find and destroy.
 
 ## Why a warm pool
 
-Provisioning takes **264–310 seconds**, measured. Nobody waits five minutes to
-look at a piece of software.
+Provisioning takes **700–750 seconds** against the live platform, measured
+2026-08-09 — up from 264–310s when the catalog was first built, on identical
+manifests. Nobody waits twelve minutes to look at a piece of software; nobody
+waited five either.
 
 That delay is not incidental — it *is* the problem OpenTry exists to solve. It
 is exactly why people do not evaluate self-hosted software. So we pay it in
@@ -91,6 +93,21 @@ advance and keep finished trials idling.
 
 Handover is **2.0 seconds**. Claiming one immediately triggers a background
 backfill.
+
+### What the drift cost us, and why it is recorded here
+
+The numbers moved, and the timeout did not move with them. `provisionTimeoutMs`
+was 12 minutes, chosen against the original 264–310s with what looked like
+generous headroom. Once real completion times reached 749s, that 720s ceiling
+sat *inside* the normal spread — and behaved exactly as you would expect,
+failing 60% of provisions with `pollUntil: timed out after 721s` while the
+successes finished at 749s.
+
+A limit that close to the median is not a timeout, it is a coin toss. It is now
+20 minutes. The lesson is not "pick a bigger number" but that a timeout derived
+from one measurement quietly becomes wrong when the thing it measures changes,
+and nothing tells you — the failures look like infrastructure problems, not
+like a stale constant.
 
 ### The claim has to be atomic
 
@@ -146,6 +163,18 @@ spam is the dominant abuse vector for free infrastructure.
 
 **No raw IPs stored.** Visitors are a salted SHA-256 of IP + user-agent — enough
 to answer "does this person already have a trial", and nothing else.
+
+**That identity is a speed bump, not a boundary — deliberately.** The IP half
+cannot be forged: `X-Forwarded-For` is read from the trusted proxy hop inward,
+so a caller who sends their own header does not get a new identity out of it.
+The user-agent half is entirely theirs, so changing it *does* mint a fresh
+one-trial allowance and a fresh rate-limit budget. Closing that properly means
+accounts, and accounts are the thing OpenTry exists to avoid — the whole point
+is that you can evaluate software without signing up for anything. So the
+per-visitor limits are sized as friction for ordinary use, and the ceilings
+that actually bound cost are global: total concurrent trials, proof of work on
+every claim, and a 30-minute TTL. Anyone describing per-visitor limits as
+enforcement is overstating them.
 
 ### The gap we could not close
 
@@ -221,8 +250,8 @@ figure on screen never under-reports. Reading only the ranges, as this did
 originally, priced every Docker service at a fallback and halved the total.
 
 That ratio is the product's whole economic argument: a maintainer's permanent
-public demo costs about six dollars a month forever, and this costs
-four tenths of a cent and deletes itself.
+public demo costs about twelve dollars a month forever, and this costs
+under a penny and deletes itself.
 
 ---
 
@@ -271,7 +300,7 @@ calls, a framework would have bought nothing.
 
 ## Testing
 
-**79 tests**, on Node's built-in runner, no new dependencies.
+**97 tests**, on Node's built-in runner, no new dependencies.
 
 The suite deliberately covers only things whose correctness cannot be
 established by reading them: resource clamping (a security property), every

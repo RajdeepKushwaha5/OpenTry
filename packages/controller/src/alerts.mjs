@@ -64,14 +64,24 @@ export class Alerter {
     const before = this.lastHealth;
     this.lastHealth = now;
 
-    if (before === null || before === now) return null; // first run, or no change
+    if (before === now) return null; // no change
 
-    const worse = SEVERITY[now] > SEVERITY[before];
+    // First observation. Normally there is nothing to report — you cannot
+    // call something a change when you have not seen it before, and alerting
+    // on every controller start would be noise. But starting up INTO a bad
+    // state is the one case where silence is wrong: a restart during an
+    // outage would adopt "failing" as the baseline and then say nothing until
+    // something else moved, which is precisely when nothing else is moving.
+    const firstLook = before === null;
+    if (firstLook && SEVERITY[now] === 0) return null;
+
+    const worse = firstLook || SEVERITY[now] > SEVERITY[before];
     const recovered = SEVERITY[now] === 0 && SEVERITY[before] > 0;
     if (!worse && !recovered) return null;
 
     const alert = {
-      kind: recovered ? 'recovered' : 'degraded',
+      kind: recovered ? 'recovered' : firstLook ? 'already-degraded' : 'degraded',
+      firstObservation: firstLook || undefined,
       from: before,
       to: now,
       failureRate: snap.failureRate,

@@ -141,7 +141,9 @@ if (existing) {
 log(`importing control plane "${NAME}"...`);
 let projectId;
 try {
-  const res = await client.importProject(manifest);
+  // Pass the name so an ambiguous import (timeout, 502) can be reconciled
+  // rather than blindly retried into a second billable project.
+  const res = await client.importProject(manifest, { projectName: NAME });
   projectId = res?.projectId ?? res?.project?.id ?? res?.id;
   if (!projectId) throw new Error('import accepted but returned no project id');
 } catch (err) {

@@ -33,11 +33,35 @@ const collector = () => {
 };
 
 describe('alerter', () => {
-  test('stays silent on the first observation', async () => {
+  test('stays silent when the first observation is healthy', async () => {
+    const { lines, log } = collector();
+    const a = new Alerter({ metrics: stubMetrics([Health.OK]), log, webhookUrl: null });
+    assert.equal(await a.check(), null, 'nothing to compare against, and nothing wrong');
+    assert.equal(lines.length, 0);
+  });
+
+  test('reports a first observation that is ALREADY failing', async () => {
+    // Starting up into an outage is the one case where "no change yet" is the
+    // wrong answer. A controller restarted mid-incident would otherwise adopt
+    // FAILING as its baseline and stay quiet until something moved — and
+    // during an outage nothing moves.
     const { lines, log } = collector();
     const a = new Alerter({ metrics: stubMetrics([Health.FAILING]), log, webhookUrl: null });
-    assert.equal(await a.check(), null, 'nothing to compare against yet');
-    assert.equal(lines.length, 0);
+    const alert = await a.check();
+    assert.equal(alert.kind, 'already-degraded');
+    assert.equal(alert.to, Health.FAILING);
+    assert.equal(alert.firstObservation, true);
+    assert.ok(lines.some((l) => l.includes('FAILING')), lines.join('\n'));
+  });
+
+  test('an already-failing start does not then re-alert on every sweep', async () => {
+    const { lines, log } = collector();
+    const a = new Alerter({ metrics: stubMetrics([Health.FAILING, Health.FAILING]), log, webhookUrl: null });
+    await a.check();
+    assert.equal(await a.check(), null, 'unchanged health must stay quiet');
+    // One alert, not one line: an alert emits a headline plus its reasons.
+    const headlines = lines.filter((l) => l.startsWith('[alert] ') && !l.startsWith('[alert]   '));
+    assert.equal(headlines.length, 1, lines.join('\n'));
   });
 
   test('fires when health gets worse', async () => {

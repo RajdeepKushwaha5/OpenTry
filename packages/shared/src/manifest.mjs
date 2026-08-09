@@ -282,7 +282,7 @@ function clampService(svc) {
 
   if (supportsContainerCount(type)) {
     out.minContainers = 1;
-    out.maxContainers = Math.min(Number(svc.maxContainers ?? 1), LIMITS.maxContainersPerService);
+    out.maxContainers = bounded(svc.maxContainers, LIMITS.maxContainersPerService, 1);
     // Runtimes have no mode; leaving one set would be rejected.
     delete out.mode;
   } else {
@@ -328,6 +328,26 @@ function normaliseCapabilities(cap = {}) {
   };
 }
 
+/**
+ * Accept a status, a list of statuses, or nothing — but never a NaN.
+ *
+ * `[Number('nope')]` is `[NaN]`, and a check whose expected status is NaN can
+ * never pass; it fails the trial minutes later with a message about an
+ * unexpected status rather than about the manifest that is actually wrong.
+ */
+export function normaliseStatuses(value, where) {
+  if (value === undefined || value === null) return null;
+  const list = (Array.isArray(value) ? value : [value]).map(Number);
+  const bad = list.filter((n) => !Number.isInteger(n) || n < 100 || n > 599);
+  if (bad.length || !list.length) {
+    throw new ManifestError(
+      `expectStatus must be HTTP status codes (got ${JSON.stringify(value)})`,
+      `${where}.expectStatus`,
+    );
+  }
+  return list;
+}
+
 function normaliseCheck(check, i) {
   const kind = String(check.kind ?? 'http');
   if (!['http', 'tcp'].includes(kind)) {
@@ -348,9 +368,9 @@ function normaliseCheck(check, i) {
     port: check.port ?? null,
     // null => accept any 2xx. The Zerops Node recipe answers 201, so a
     // hardcoded 200 default would fail perfectly healthy apps.
-    expectStatus: check.expectStatus ?? null,
+    expectStatus: normaliseStatuses(check.expectStatus, `verify[${i}]`),
     expectBodyContains: check.expectBodyContains ?? null,
-    timeoutMs: Math.min(Number(check.timeoutMs ?? 60_000), 180_000),
+    timeoutMs: bounded(check.timeoutMs, 180_000, 60_000),
   };
 }
 

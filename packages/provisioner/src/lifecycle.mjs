@@ -21,7 +21,7 @@
  */
 
 import { LEASE_TAG, LIMITS } from '../../shared/src/limits.mjs';
-import { assertLocalPath } from '../../shared/src/local-path.mjs';
+import { resolveOnTrial } from '../../shared/src/local-path.mjs';
 import { renderImportYaml } from '../../shared/src/manifest.mjs';
 import { pollUntil } from './zerops-client.mjs';
 import { estimateCostUsd } from './cost.mjs';
@@ -84,7 +84,10 @@ const SERVICE_AWAITING_DEPLOY = new Set(['READY_TO_DEPLOY']);
  * triggered" diagnosis.
  */
 const STUCK_AWAITING_DEPLOY_MS = 150_000;
-const STUCK_AWAITING_DEPLOY_MS_VM = 420_000;
+// Raised from 420s with the global timeout: the platform now takes ~2.4x what
+// it did when these were measured, and a stuck-detector that fires during
+// normal boot replaces a slow success with a confident, wrong diagnosis.
+const STUCK_AWAITING_DEPLOY_MS_VM = 600_000;
 
 function stuckThresholdFor(serviceType) {
   return /docker/i.test(String(serviceType ?? ''))
@@ -343,9 +346,9 @@ async function runCheck({ check, url, client, projectId, services }) {
 
   // http
   // Belt and braces: the manifest parser already rejects a non-local check
-  // path, but this is the line that would actually make the request.
-  assertLocalPath(check.path ?? '/', `check "${check.name}"`);
-  const target = new URL(check.path ?? '/', url).toString();
+  // path, but this is the line that actually makes the request, so the URL
+  // that gets fetched is the one that was origin-checked.
+  const target = resolveOnTrial(check.path ?? '/', url, `check "${check.name}"`);
   await pollUntil(
     async () => {
       try {

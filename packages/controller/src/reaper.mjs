@@ -19,6 +19,7 @@
  */
 
 import { LEASE_TAG, LIMITS } from '../../shared/src/limits.mjs';
+import { LeaseState } from './store.mjs';
 import { estimateCostUsd } from '../../provisioner/src/cost.mjs';
 
 /** An orphan must be at least this old before we touch it. */
@@ -51,6 +52,7 @@ export class Reaper {
     this.running = true;
     try {
       await this.#reapExpired();
+      await this.#reapStaleWithoutProject();
       await this.#reapOrphans();
     } finally {
       this.running = false;
@@ -66,6 +68,21 @@ export class Reaper {
 
     for (const lease of due) {
       try {
+        // A provision we are collecting because it ran out of time is a
+        // FAILURE, and has to say so before the state moves on. Metrics key on
+        // the error column precisely because state is transient; without this
+        // a timeout passed straight to DESTROYED and showed up as attempted
+        // but neither succeeded nor failed — invisible in the failure rate,
+        // invisible to the alerter, and the single most common way this
+        // system breaks.
+        if (lease.state === LeaseState.PROVISIONING && !lease.error) {
+          const age = Math.round((Date.now() - new Date(lease.created_at).getTime()) / 1000);
+          await this.store.recordError(
+            lease.id,
+            `Provisioning exceeded the ${Math.round(LIMITS.provisionTimeoutMs / 1000)}s limit (gave up at ${age}s)`,
+          );
+        }
+
         await this.store.markDestroying(lease.id);
 
         const manifest = this.catalog.get(lease.app_slug);
@@ -89,6 +106,28 @@ export class Reaper {
           this.log(`[reaper] FAILED to destroy ${lease.id}: ${err.message}`);
         }
       }
+    }
+  }
+
+  /**
+   * Close out leases that never got a project.
+   *
+   * No Zerops call: there is nothing to delete. The row is the whole problem —
+   * it holds a slot against the global concurrency ceiling that no amount of
+   * waiting will release, because the reaper that would release it only looks
+   * at leases with a project id.
+   */
+  async #reapStaleWithoutProject() {
+    const stale = await this.store.findStaleWithoutProject({
+      provisionTimeoutMs: LIMITS.provisionTimeoutMs + 120_000,
+    });
+    for (const lease of stale) {
+      await this.store.recordError(
+        lease.id,
+        'Provisioning never reached project creation (controller restarted mid-import)',
+      );
+      await this.store.markDestroyed(lease.id, {});
+      this.log(`[reaper] released stale slot ${lease.app_slug}/${lease.id} (no project was created)`);
     }
   }
 

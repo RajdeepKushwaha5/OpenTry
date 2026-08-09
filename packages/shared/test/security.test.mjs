@@ -155,7 +155,18 @@ describe('cost model prices every service family', () => {
   });
 });
 
-describe('visitor identity cannot be chosen by the visitor', () => {
+/**
+ * Deliberately named for what it actually guarantees.
+ *
+ * The fingerprint is IP + user-agent, and the user-agent is caller-controlled:
+ * changing it yields a new identity and a fresh one-trial-per-visitor
+ * allowance. That is a soft limit and the docs should not pretend otherwise.
+ * What these tests pin down is narrower and still worth having — the IP half
+ * cannot be forged, which is what stops a single caller from minting
+ * unlimited identities from one connection without even changing clients.
+ * The hard ceilings are global concurrency and proof of work.
+ */
+describe('the IP half of visitor identity cannot be forged', () => {
   const req = (xff) => ({ headers: { 'x-forwarded-for': xff }, socket: { remoteAddress: '10.0.0.1' } });
 
   test('a forged X-Forwarded-For prefix does not change the fingerprint', () => {

@@ -31,10 +31,21 @@ export const LIMITS = Object.freeze({
   maxConcurrentTrials: Number(process.env.OPENTRY_MAX_CONCURRENT_TRIALS ?? 6),
   maxTrialsPerVisitor: 1,
 
-  /** How long provisioning may run before we give up and destroy. */
-  // 12 min: a Docker VM may sit in READY_TO_DEPLOY for up to 7 min on its own
-  // (full kernel boot), so the global ceiling must exceed the per-service one.
-  provisionTimeoutMs: 12 * 60 * 1000,
+  /**
+   * How long provisioning may run before we give up and destroy.
+   *
+   * 20 min. This was 12, chosen when the catalog measured 264-310s end to end
+   * — comfortable headroom at the time. It is not any more: the same four apps
+   * now take 699-749s against the live platform, and a 720s ceiling sitting
+   * inside the spread of normal completion times is a coin flip, not a
+   * timeout. It behaved like one, failing 60% of provisions with
+   * `pollUntil: timed out after 721s` while the successes finished at 749s.
+   *
+   * A timeout has to be far enough above p95 that firing means something is
+   * actually wrong. An idle slot costs ~$0.0001/min, so the headroom is
+   * almost free; a demo whose pool cannot refill is not.
+   */
+  provisionTimeoutMs: 20 * 60 * 1000,
   /** Grace period after expiry before the reaper force-deletes. */
   reaperGraceMs: 60 * 1000,
   /** How often the reaper sweeps. */
