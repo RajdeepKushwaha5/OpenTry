@@ -19,3 +19,6 @@ tmp/
 
 # Downloaded API spec (regenerate with npm run discover)
 spec.tmp.yml
+
+# scratch
+.u
