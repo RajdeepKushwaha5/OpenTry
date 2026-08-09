@@ -326,3 +326,20 @@ describe('a manifest cannot widen its own ceiling', () => {
     assert.equal(svc.mode, 'NON_HA');
   });
 });
+
+describe('a verify check cannot address another host', () => {
+  const withCheck = (path) =>
+    parseManifest(base(`verify:\n  - { name: c, kind: http, path: ${path} }`).replace('\nverify:', '\nverify:'));
+
+  test('non-local check paths are rejected at parse time', () => {
+    // lifecycle resolves this against the trial URL, and new URL() drops the
+    // base for an absolute path — the controller would fetch the other host.
+    for (const p of ['https://attacker.example/x', '//attacker.example/x', 'relative']) {
+      assert.throws(() => withCheck(p), /path must be local/, p);
+    }
+  });
+
+  test('a local check path is accepted', () => {
+    assert.equal(withCheck('/healthz').verify[0].path, '/healthz');
+  });
+});

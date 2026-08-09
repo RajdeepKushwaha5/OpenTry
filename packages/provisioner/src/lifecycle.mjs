@@ -21,6 +21,7 @@
  */
 
 import { LEASE_TAG, LIMITS } from '../../shared/src/limits.mjs';
+import { assertLocalPath } from '../../shared/src/local-path.mjs';
 import { renderImportYaml } from '../../shared/src/manifest.mjs';
 import { pollUntil } from './zerops-client.mjs';
 import { estimateCostUsd } from './cost.mjs';
@@ -118,7 +119,7 @@ export async function provisionTrial({ client, manifest, trialId, emit = () => {
     step('render', 'ok', `Manifest rendered (${manifest.services.length} services)`);
 
     step('import', 'running', 'Creating isolated project');
-    const res = await client.importProject(yaml);
+    const res = await client.importProject(yaml, { projectName });
     projectId =
       res?.projectId ??
       res?.project?.id ??
@@ -341,6 +342,9 @@ async function runCheck({ check, url, client, projectId, services }) {
   }
 
   // http
+  // Belt and braces: the manifest parser already rejects a non-local check
+  // path, but this is the line that would actually make the request.
+  assertLocalPath(check.path ?? '/', `check "${check.name}"`);
   const target = new URL(check.path ?? '/', url).toString();
   await pollUntil(
     async () => {

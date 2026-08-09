@@ -49,18 +49,42 @@ export function costPerMinute({ cpu = 1, ramGb = 0.25, diskGb = 1, cpuMode = 'SH
  * @param {Array<{verticalAutoscaling?:object}>} services  clamped manifest services
  * @param {number} lifetimeMs
  */
+/**
+ * Read a service's resources whatever shape the family uses.
+ *
+ * Docker services run in VMs and take FIXED `cpu`/`ram`/`disk`; everything else
+ * takes `min*`/`max*` ranges. Reading only the ranges priced every Docker
+ * service at the fallback 1 CPU / 0.25 GB / 1 GB — and Docker is the main
+ * service in every catalog entry, so the headline figures were materially low
+ * while the docs claimed estimates never under-report.
+ *
+ * Takes the LARGEST value present rather than the first one found. `??` would
+ * stop at whichever key happened to come first, so a service carrying both a
+ * fixed `cpu` and a larger `maxCpu` would be priced from the smaller. The docs
+ * promise the estimate never under-reports; this is what makes that true
+ * instead of merely intended.
+ */
+function largest(values, fallback) {
+  const nums = values.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  return nums.length ? Math.max(...nums) : fallback;
+}
+
+function resourcesOf(svc) {
+  const va = svc.verticalAutoscaling ?? {};
+  return {
+    cpu: largest([va.cpu, va.maxCpu, va.minCpu], 1),
+    ramGb: largest([va.ram, va.maxRam, va.minRam], 0.25),
+    diskGb: largest([va.disk, va.maxDisk, va.minDisk], 1),
+    cpuMode: va.cpuMode === 'DEDICATED' ? 'DEDICATED' : 'SHARED',
+  };
+}
+
 export function estimateCostUsd(services, lifetimeMs) {
   const minutes = Math.max(lifetimeMs / 60_000, 1); // Zerops bills whole minutes
   let perMinute = 0;
 
   for (const svc of services) {
-    const va = svc.verticalAutoscaling ?? {};
-    perMinute += costPerMinute({
-      cpu: Number(va.maxCpu ?? va.minCpu ?? 1),
-      ramGb: Number(va.maxRam ?? va.minRam ?? 0.25),
-      diskGb: Number(va.maxDisk ?? va.minDisk ?? 1),
-      cpuMode: va.cpuMode === 'DEDICATED' ? 'DEDICATED' : 'SHARED',
-    });
+    perMinute += costPerMinute(resourcesOf(svc));
   }
 
   return Number((perMinute * minutes).toFixed(4));
@@ -79,13 +103,7 @@ export function formatCost(usd) {
 export function monthlyEquivalentUsd(services) {
   let perMinute = 0;
   for (const svc of services) {
-    const va = svc.verticalAutoscaling ?? {};
-    perMinute += costPerMinute({
-      cpu: Number(va.maxCpu ?? 1),
-      ramGb: Number(va.maxRam ?? 0.25),
-      diskGb: Number(va.maxDisk ?? 1),
-      cpuMode: va.cpuMode === 'DEDICATED' ? 'DEDICATED' : 'SHARED',
-    });
+    perMinute += costPerMinute(resourcesOf(svc));
   }
   return Number((perMinute * MINUTES_PER_30_DAYS).toFixed(2));
 }

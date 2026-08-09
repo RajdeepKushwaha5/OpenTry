@@ -121,9 +121,11 @@ export class ZeropsClient {
    *
    * Retried: network errors, timeouts, 429, and 5xx.
    * Never retried: 4xx other than 429 — those are our bug, and repeating a
-   * rejected request just wastes time. POSTs are still retried because every
-   * mutating call we make is either idempotent or guarded elsewhere (project
-   * import is preceded by a duplicate-name check; delete is tag-guarded).
+   * rejected request just wastes time.
+   *
+   * POSTs are retried here only because every mutating call routed through
+   * this method is idempotent or guarded (delete is tag-guarded). Project
+   * import is NOT — it opts out and reconciles instead; see importProject.
    */
   async request(method, path, body, { retries = 4 } = {}) {
     let lastErr;
@@ -202,9 +204,57 @@ export class ZeropsClient {
    * Takes the same Import YAML you'd paste into the GUI, as a string.
    * Returns the created project plus the async processes that provision it.
    */
-  async importProject(yamlString) {
+  /**
+   * Create a project, without ever creating two.
+   *
+   * Project import is the one call we make that is neither idempotent nor
+   * guarded downstream. The generic retry in `request` treats a timeout or a
+   * 502 as "try again", but those are AMBIGUOUS: Zerops may well have created
+   * the project and lost the response on the way back. Retrying then bills a
+   * second project that no lease row points at, and the orphan reaper does not
+   * collect it until its 15-minute grace expires.
+   *
+   * A trial's project name embeds its trial id, so the ambiguity is resolvable:
+   * on a transient failure, look for the project before deciding. If it exists
+   * the import actually succeeded and we adopt it; if it does not, nothing was
+   * created and retrying is safe.
+   *
+   * Without a name to reconcile against there is no safe retry, so there isn't
+   * one — a failed provision costs one trial, a duplicated one costs money.
+   *
+   * @param {string} yamlString
+   * @param {{projectName?: string, attempts?: number}} [opts]
+   */
+  async importProject(yamlString, { projectName, attempts = 3 } = {}) {
     const clientId = await this.getClientId();
-    return this.request('POST', `/client/${clientId}/project/import`, { yaml: yamlString });
+    const path = `/client/${clientId}/project/import`;
+    let lastErr;
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        return await this.request('POST', path, { yaml: yamlString }, { retries: 0 });
+      } catch (err) {
+        lastErr = err;
+        const ambiguous =
+          err.transient === true || err.status === 429 || (err.status >= 500 && err.status < 600);
+        if (!ambiguous || !projectName) throw err;
+
+        // Did it land after all?
+        const existing = await this.listProjects()
+          .then((ps) => ps.find((p) => p.name === projectName))
+          .catch(() => null);
+        if (existing) {
+          this.onRetry?.({ method: 'POST', path, attempt: attempt + 1, reconciled: existing.id });
+          return { projectId: existing.id, reconciled: true };
+        }
+
+        if (attempt === attempts - 1) break;
+        const delay = 400 * 2 ** attempt + Math.random() * 250;
+        this.onRetry?.({ method: 'POST', path, attempt: attempt + 1, delay, error: err.message });
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    throw lastErr;
   }
 
   /** GET /project/{id}/service-stack */

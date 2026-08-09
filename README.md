@@ -29,7 +29,7 @@ It isn't a sandbox or a recording. Each trial is a genuine, isolated Zerops proj
 | | Deploy buttons (Railway / Vercel / Zerops recipes) | OpenTry |
 |---|---|---|
 | Account needed | Yes | **No** |
-| Who pays | You | Nobody — it's temporary |
+| Who pays | You | The OpenTry operator — a fraction of a cent per trial |
 | Where it goes | Permanently into your account | A throwaway project |
 | Cleanup | You remember | Automatic |
 | Serves | People who already decided | **People still deciding** |
@@ -42,7 +42,7 @@ OpenTry is not an app that merely *runs on* Zerops. Zerops' project API **is** t
 
 **Trials are real Zerops projects.** Every trial is created with `POST /client/{id}/project/import` from a rendered Import YAML, and destroyed with `DELETE /project/{id}`. Full private network, dedicated L3 firewall, L7 balancer, SSL, managed Postgres — per visitor.
 
-**Per-minute billing makes it viable.** A 30-minute n8n trial costs roughly **$0.0043**. The same stack left running for 30 days would be **$6.15**. Disposable infrastructure is only sane on a platform that bills by the minute and gives you a free Lightweight core per project.
+**Per-minute billing makes it viable.** A 30-minute n8n trial costs roughly **$0.0086**. The same stack left running for 30 days would be **$12.40**. Disposable infrastructure is only sane on a platform that bills by the minute and gives you a free Lightweight core per project.
 
 **Two-project isolation.** Trials are untrusted and reachable by anonymous visitors, so they never share a network with the control plane:
 
@@ -162,7 +162,7 @@ See [DEPLOY.md](DEPLOY.md) for the full guide.
 ## Tests
 
 ```bash
-npm test        # 72 tests, no dependencies beyond Node
+npm test        # 79 tests, no dependencies beyond Node
 npm run test:db # concurrency tests — needs a real Postgres
 ```
 
@@ -176,8 +176,11 @@ by reading them:
   insufficient work, a forged signature lowering its own difficulty, expiry,
   and malformed input.
 - **Cost model** — that the shared/dedicated ratio is 10x, that 30 days of
-  usage equals the published monthly rate, and that estimates come from the
-  ceiling so the figure on screen never under-reports.
+  usage equals the published monthly rate, and that every service family is
+  priced from its largest declared value, so the figure on screen never
+  under-reports. Docker services declare fixed `cpu`/`ram`/`disk` rather than
+  ranges, and reading only the ranges priced them at a fallback — which
+  understated every catalog app by about half until it was tested.
 - **Claim race** — `FOR UPDATE SKIP LOCKED` plus a partial unique index are
   claims about Postgres under simultaneous writes, and the failure mode (two
   visitors handed the same trial) only appears under exactly the load a demo

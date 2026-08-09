@@ -212,11 +212,13 @@ billing API, so every surface that shows this labels it *estimated*.
 
 | | |
 |---|---|
-| 30-minute trial | **~$0.004** |
-| Same stack left running 30 days | **~$6.15** |
+| 30-minute trial | **~$0.0086** |
+| Same stack left running 30 days | **~$12.40** |
 
-Estimates use the resource *ceiling*, so the figure on screen never
-under-reports.
+Estimates take the largest value each service declares — Docker services use
+fixed `cpu`/`ram`/`disk` where everything else uses `min`/`max` ranges — so the
+figure on screen never under-reports. Reading only the ranges, as this did
+originally, priced every Docker service at a fallback and halved the total.
 
 That ratio is the product's whole economic argument: a maintainer's permanent
 public demo costs about six dollars a month forever, and this costs
@@ -269,7 +271,7 @@ calls, a framework would have bought nothing.
 
 ## Testing
 
-**65 tests**, on Node's built-in runner, no new dependencies.
+**79 tests**, on Node's built-in runner, no new dependencies.
 
 The suite deliberately covers only things whose correctness cannot be
 established by reading them: resource clamping (a security property), every

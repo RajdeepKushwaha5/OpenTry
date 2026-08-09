@@ -10,10 +10,14 @@ Docker, no `zcli`, no CI, no bundler.
 Zerops builds the control plane straight from git, so **the repository must be
 reachable by Zerops**. Two options:
 
-- **Public repository** — works immediately, nothing to configure.
-- **Private repository** — connect it first in the Zerops GUI under
-  *Service detail → Pipelines & CI/CD settings → Connect with a GitHub
-  repository*. Without this, the build cannot clone your code.
+- **Public repository** — works immediately, nothing to configure. This is
+  the path OpenTry itself uses and the only one verified here.
+- **Private repository** — Zerops' Import YAML documentation states that
+  `buildFromGit` requires a publicly reachable repository and that private
+  ones fail during cloning. Connecting the repository in the GUI first
+  (*Service detail → Pipelines & CI/CD settings → Connect with a GitHub
+  repository*) is a different mechanism and may work, but we have not
+  tested it — assume public unless you have confirmed otherwise.
 
 Then point the manifest at your copy:
 
@@ -93,7 +97,7 @@ Set on the `controller` service (or at project scope):
 | `OPENTRY_RECONCILE_MS` | `20000` | How often the pool is topped up |
 
 Raising `OPENTRY_MAX_CONCURRENT_TRIALS` raises your bill. Each live trial costs
-roughly **$0.0043 per 30 minutes** at Zerops list prices; the ceiling is what
+roughly **$0.0086 per 30 minutes** at Zerops list prices; the ceiling is what
 stands between a bug and a drained account.
 
 ---

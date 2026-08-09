@@ -46,12 +46,46 @@ app.use(express.json({ limit: '16kb' }));
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = Number(process.env.OPENTRY_RATE_MAX ?? 30);
 
+/**
+ * Polling and claiming cannot share a budget.
+ *
+ * The UI refreshes the pool and the live build every 5s and the ops panel every
+ * 20s — 27 requests a minute before the visitor touches anything. Against a
+ * single 30/min bucket an idle tab exhausts its own allowance, and the 429 then
+ * lands on whatever the visitor does next. That is the Try button, on camera.
+ *
+ * So the budget is split by what a request costs us. Reads are cheap and mostly
+ * self-inflicted by our own polling, and get room for several tabs. Anything
+ * that can create infrastructure keeps the strict limit — that is the bucket
+ * the ceiling was written for, and proof-of-work sits in front of it too.
+ */
+const RATE_POLL_MAX = Number(process.env.OPENTRY_RATE_POLL_MAX ?? 240);
+const POLL_PATHS = new Set([
+  '/api/pool',
+  '/api/pool/building',
+  '/api/metrics',
+  '/api/health/deep',
+  '/api/catalog',
+  '/api/trials/mine',
+]);
+const TRIAL_READ_RE = /^\/api\/trials\/[^/]+(\/events)?$/;
+
+/** Read-only polling, or something that can spend money? */
+function bucketFor(req) {
+  if (req.method !== 'GET') return { name: 'write', max: RATE_MAX };
+  if (POLL_PATHS.has(req.path) || TRIAL_READ_RE.test(req.path)) {
+    return { name: 'poll', max: RATE_POLL_MAX };
+  }
+  return { name: 'read', max: RATE_MAX };
+}
+
 async function rateLimit(req, res, next) {
   try {
-    const key = visitorFingerprint(req);
+    const bucket = bucketFor(req);
+    const key = `${bucket.name}:${visitorFingerprint(req)}`;
     const { allowed, retryAfterSeconds } = await store.hitRateLimit(key, {
       windowMs: RATE_WINDOW_MS,
-      max: RATE_MAX,
+      max: bucket.max,
     });
     if (!allowed) {
       res.set('retry-after', String(retryAfterSeconds));
@@ -404,9 +438,45 @@ app.get('/api/trials/:id', async (req, res) => {
  * reconnects on its own. Clients resume with Last-Event-ID so a dropped
  * connection does not lose the timeline.
  */
+/**
+ * Concurrent stream budget.
+ *
+ * Each stream polls the database every 1.5s for as long as it stays open, and
+ * the pg pool holds eight connections. The rate limiter counts the one request
+ * that opens a stream, not the minutes of querying that follow, so a handful of
+ * held-open connections can starve claims and ordinary API calls. The building
+ * lease id is public, so this costs an attacker no account and no proof of work.
+ *
+ * Two ceilings: a few per visitor (a real person has one tab, maybe three), and
+ * a global one comfortably under the pool so provisioning always has room.
+ */
+const MAX_STREAMS_PER_VISITOR = Number(process.env.OPENTRY_MAX_STREAMS_PER_VISITOR ?? 4);
+const MAX_STREAMS_TOTAL = Number(process.env.OPENTRY_MAX_STREAMS_TOTAL ?? 40);
+const openStreams = new Map(); // visitor fingerprint -> count
+let openStreamsTotal = 0;
+
 app.get('/api/trials/:id/events', async (req, res) => {
   const lease = await store.getLease(req.params.id);
   if (!lease) return res.status(404).json({ error: 'Unknown trial' });
+
+  const who = visitorFingerprint(req);
+  const mine = openStreams.get(who) ?? 0;
+  if (mine >= MAX_STREAMS_PER_VISITOR || openStreamsTotal >= MAX_STREAMS_TOTAL) {
+    res.set('retry-after', '10');
+    return res.status(429).json({ error: 'Too many open streams.', retryAfterSeconds: 10 });
+  }
+  openStreams.set(who, mine + 1);
+  openStreamsTotal++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    openStreamsTotal--;
+    const n = (openStreams.get(who) ?? 1) - 1;
+    if (n > 0) openStreams.set(who, n);
+    else openStreams.delete(who);
+  };
+  res.on('close', release);
 
   res.writeHead(200, {
     'content-type': 'text/event-stream',
@@ -425,42 +495,50 @@ app.get('/api/trials/:id/events', async (req, res) => {
     res.write(`id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  while (!closed) {
-    const events = await store.listEvents(req.params.id, lastId);
-    for (const e of events) {
-      lastId = e.id;
-      // Only the human-readable timeline. Event metadata carries internal
-      // project ids and URLs the controller recorded; none of it is public.
-      send(e.id, 'step', {
-        id: e.id,
-        at_ms: e.at_ms,
-        step: e.step,
-        status: e.status,
-        message: e.message,
-      });
-    }
+  try {
+    while (!closed) {
+      const events = await store.listEvents(req.params.id, lastId);
+      for (const e of events) {
+        lastId = e.id;
+        // Only the human-readable timeline. Event metadata carries internal
+        // project ids and URLs the controller recorded; none of it is public.
+        send(e.id, 'step', {
+          id: e.id,
+          at_ms: e.at_ms,
+          step: e.step,
+          status: e.status,
+          message: e.message,
+        });
+      }
 
-    const current = await store.getLease(req.params.id);
-    if (current && ['READY_UNCLAIMED', 'CLAIMED'].includes(current.state)) {
-      // This stream is public — the UI watches the pool backfill so visitors
-      // can see real provisioning happen. A warm trial has NOT been claimed,
-      // so its URL and generated password must not travel down it. Claiming
-      // through POST /api/trials is the only way to receive them.
-      const owned =
-        current.state === LeaseState.CLAIMED &&
-        current.visitor_hash === visitorFingerprint(req);
-      send(lastId + 1, 'ready', owned
-        ? shape(current)
-        : { id: current.id, app: current.app_slug, state: 'ready' });
-      break;
-    }
-    if (current && ['FAILED', 'DESTROYED'].includes(current.state)) {
-      send(lastId + 1, 'failed', { error: current.error ?? 'Trial ended' });
-      break;
-    }
+      const current = await store.getLease(req.params.id);
+      if (current && ['READY_UNCLAIMED', 'CLAIMED'].includes(current.state)) {
+        // This stream is public — the UI watches the pool backfill so visitors
+        // can see real provisioning happen. A warm trial has NOT been claimed,
+        // so its URL and generated password must not travel down it. Claiming
+        // through POST /api/trials is the only way to receive them.
+        const owned =
+          current.state === LeaseState.CLAIMED &&
+          current.visitor_hash === visitorFingerprint(req);
+        send(
+          lastId + 1,
+          'ready',
+          owned ? shape(current) : { id: current.id, app: current.app_slug, state: 'ready' },
+        );
+        break;
+      }
+      if (current && ['FAILED', 'DESTROYED'].includes(current.state)) {
+        send(lastId + 1, 'failed', { error: current.error ?? 'Trial ended' });
+        break;
+      }
 
-    res.write(': keep-alive\n\n'); // comment frame keeps intermediaries honest
-    await new Promise((r) => setTimeout(r, 1500));
+      res.write(': keep-alive\n\n'); // comment frame keeps intermediaries honest
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  } finally {
+    // A throw in the loop (a database blip) must not leak a slot: the counter
+    // would only ever climb, and the cap would eventually refuse everyone.
+    release();
   }
   res.end();
 });
@@ -477,11 +555,21 @@ app.delete('/api/trials/:id', async (req, res) => {
   const lease = await store.getLease(req.params.id);
   if (!lease) return res.status(404).json({ error: 'Unknown trial' });
 
-  if (lease.visitor_hash && lease.visitor_hash !== visitorFingerprint(req)) {
-    return res.status(403).json({ error: 'Not your trial' });
-  }
   if (lease.state === LeaseState.DESTROYED) {
     return res.json({ destroyed: true, alreadyDestroyed: true });
+  }
+
+  // Only a trial you hold. The old guard was `lease.visitor_hash && ...`, which
+  // skipped entirely for PROVISIONING and READY_UNCLAIMED leases, because those
+  // have no visitor yet — and their ids are public via /api/pool/building. A
+  // stranger could expire the warm pool.
+  //
+  // It did not even do what it claimed: findReapable honours expires_at only
+  // for CLAIMED leases, so setting it on a warm one destroyed nothing while
+  // still returning `destroyed: true` and a cost receipt for someone else's
+  // trial. Reporting a teardown that did not happen is its own bug.
+  if (lease.state !== LeaseState.CLAIMED || lease.visitor_hash !== visitorFingerprint(req)) {
+    return res.status(403).json({ error: 'Not your trial' });
   }
 
   // Expire it immediately; the reaper collects it on its next sweep.

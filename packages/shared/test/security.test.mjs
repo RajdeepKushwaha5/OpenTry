@@ -10,6 +10,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { issueChallenge, verifySolution, solve, DIFFICULTY } from '../src/proof-of-work.mjs';
 import { estimateCostUsd, monthlyEquivalentUsd, costPerMinute } from '../../provisioner/src/cost.mjs';
+import { visitorFingerprint } from '../../controller/src/store.mjs';
 
 describe('proof of work', () => {
   test('accepts a correctly solved challenge', () => {
@@ -124,5 +125,54 @@ describe('cost model', () => {
     const monthly = monthlyEquivalentUsd(stack);
     assert.ok(halfHour < 0.02, `30-min trial should be under 2 cents, got ${halfHour}`);
     assert.ok(monthly > 1 && monthly < 20, `monthly equivalent looked wrong: ${monthly}`);
+  });
+});
+
+describe('cost model prices every service family', () => {
+  test('a Docker VM is priced from its fixed cpu/ram/disk', () => {
+    // Docker services take fixed resources, not min/max ranges. Reading only
+    // the ranges silently priced every Docker service at the 1 CPU / 0.25 GB /
+    // 1 GB fallback — and Docker is the main service in every catalog entry,
+    // so the published figures were about half the real cost while the docs
+    // claimed estimates never under-report.
+    const fixed = [{ verticalAutoscaling: { cpu: 2, ram: 2, disk: 5 } }];
+    const ranged = [{ verticalAutoscaling: { maxCpu: 2, maxRam: 2, maxDisk: 5 } }];
+    assert.equal(estimateCostUsd(fixed, 60_000), estimateCostUsd(ranged, 60_000));
+
+    const fallback = [{ verticalAutoscaling: {} }];
+    assert.ok(
+      estimateCostUsd(fixed, 60_000) > estimateCostUsd(fallback, 60_000),
+      'fixed resources must cost more than an empty spec',
+    );
+  });
+
+  test('the estimate reads high, never low', () => {
+    // The number goes on screen and into the receipt. Erring upward is safe;
+    // erring downward is a promise we cannot keep.
+    const both = [{ verticalAutoscaling: { cpu: 1, maxCpu: 4, ram: 1, maxRam: 4 } }];
+    const ceiling = [{ verticalAutoscaling: { cpu: 4, ram: 4 } }];
+    assert.ok(estimateCostUsd(both, 60_000) >= estimateCostUsd(ceiling, 60_000) * 0.99);
+  });
+});
+
+describe('visitor identity cannot be chosen by the visitor', () => {
+  const req = (xff) => ({ headers: { 'x-forwarded-for': xff }, socket: { remoteAddress: '10.0.0.1' } });
+
+  test('a forged X-Forwarded-For prefix does not change the fingerprint', () => {
+    // A proxy appends the peer it saw, so everything left of the trusted hop
+    // is caller-supplied. Reading [0] gave a fresh identity per request and a
+    // free bypass of one-trial-per-visitor.
+    const real = visitorFingerprint(req('203.0.113.7'));
+    assert.equal(visitorFingerprint(req('1.2.3.4, 203.0.113.7')), real);
+    assert.equal(visitorFingerprint(req('evil, 9.9.9.9, 203.0.113.7')), real);
+  });
+
+  test('genuinely different clients still differ', () => {
+    assert.notEqual(visitorFingerprint(req('203.0.113.7')), visitorFingerprint(req('203.0.113.8')));
+  });
+
+  test('no header falls back to the socket', () => {
+    const bare = { headers: {}, socket: { remoteAddress: '10.0.0.1' } };
+    assert.equal(visitorFingerprint(bare), visitorFingerprint(req('10.0.0.1')));
   });
 });

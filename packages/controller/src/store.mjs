@@ -332,11 +332,43 @@ export class LeaseStore {
  */
 const VISITOR_SALT = process.env.OPENTRY_VISITOR_SALT ?? randomBytes(16).toString('hex');
 
+/**
+ * Trusted proxy hops in front of this process. Zerops terminates TLS and
+ * routes public traffic through the project's own L7 balancer: exactly one.
+ */
+const TRUSTED_PROXY_HOPS = Number(process.env.OPENTRY_TRUSTED_PROXY_HOPS ?? 1);
+
+/**
+ * Which entry of X-Forwarded-For is actually ours.
+ *
+ * A proxy APPENDS the peer it received the request from, so the header reads
+ * left-to-right as [client-supplied..., untrusted-hops..., trusted-hops...].
+ * Everything except the entries our own infrastructure appended is attacker
+ * controlled: a caller can send `X-Forwarded-For: 1.2.3.4` and the balancer
+ * will happily forward `1.2.3.4, <their real ip>`.
+ *
+ * Reading `[0]`, as this used to, therefore reads exactly the value the caller
+ * chose — a new fingerprint per request, which is a free bypass of the
+ * one-trial-per-visitor limit. Counting from the right instead takes the entry
+ * the last trusted hop wrote.
+ *
+ * This is correct or no worse under every proxy behaviour: if Zerops appends,
+ * the rightmost hop is the real peer; if it replaces the header, there is one
+ * entry and both readings agree; if it forwarded the header untouched we would
+ * fall back to the socket address, which is what the `||` chain is for.
+ */
+function clientIp(req) {
+  const chain = (req.headers['x-forwarded-for'] ?? '')
+    .toString()
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  if (!chain.length) return null;
+  return chain[Math.max(0, chain.length - TRUSTED_PROXY_HOPS)] ?? null;
+}
+
 export function visitorFingerprint(req) {
-  const ip =
-    (req.headers['x-forwarded-for'] ?? '').toString().split(',')[0].trim() ||
-    req.socket?.remoteAddress ||
-    'unknown';
+  const ip = clientIp(req) || req.socket?.remoteAddress || 'unknown';
   const ua = (req.headers['user-agent'] ?? '').toString().slice(0, 200);
   return createHash('sha256').update(`${VISITOR_SALT}|${ip}|${ua}`).digest('hex').slice(0, 32);
 }

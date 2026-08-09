@@ -14,6 +14,7 @@
  */
 
 import YAML from 'yaml';
+import { assertLocalPath } from './local-path.mjs';
 import { normaliseSeedStep } from '../../provisioner/src/seed.mjs';
 import { randomBytes } from 'node:crypto';
 import {
@@ -332,10 +333,17 @@ function normaliseCheck(check, i) {
   if (!['http', 'tcp'].includes(kind)) {
     throw new ManifestError(`unsupported check kind "${kind}"`, `verify[${i}]`);
   }
+  const path = check.path ?? '/';
+  if (kind === 'http') {
+    // Same rule the seed runner enforces: lifecycle resolves this against the
+    // trial URL, and an absolute one would point the controller at another host.
+    assertLocalPath(path, `verify[${i}] "${check.name ?? i}"`, (m) => new ManifestError(m, `verify[${i}].path`));
+  }
+
   return {
     name: String(check.name ?? `check ${i + 1}`),
     kind,
-    path: check.path ?? '/',
+    path,
     service: check.service ?? null,
     port: check.port ?? null,
     // null => accept any 2xx. The Zerops Node recipe answers 201, so a

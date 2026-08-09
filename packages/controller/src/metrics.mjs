@@ -46,7 +46,13 @@ export class Metrics {
          app_slug,
          count(*)::int                                           AS attempted,
          count(*) FILTER (WHERE provision_ms IS NOT NULL)::int    AS succeeded,
-         count(*) FILTER (WHERE state = 'FAILED')::int            AS failed,
+         -- Durable evidence, not current state. A FAILED lease is reapable
+         -- immediately, so the reaper moves it to DESTROYING and then
+         -- DESTROYED within one 30s sweep, while the alerter only looks every
+         -- two minutes. Keyed on the FAILED state the failure rate read ~0 no
+         -- matter how badly provisioning was going. The error column is
+         -- written by markFailed and never cleared, so it outlives the state.
+         count(*) FILTER (WHERE error IS NOT NULL)::int            AS failed,
          count(*) FILTER (WHERE claimed_at IS NOT NULL)::int      AS claimed,
          percentile_cont(0.5) WITHIN GROUP (ORDER BY provision_ms)  AS p50_ms,
          percentile_cont(0.95) WITHIN GROUP (ORDER BY provision_ms) AS p95_ms,
@@ -63,7 +69,7 @@ export class Metrics {
     const { rows: failures } = await this.store.pool.query(
       `SELECT id, app_slug, error, created_at
          FROM leases
-        WHERE state = 'FAILED' AND created_at > now() - $1::interval
+        WHERE error IS NOT NULL AND created_at > now() - $1::interval
         ORDER BY created_at DESC
         LIMIT 10`,
       [since],
