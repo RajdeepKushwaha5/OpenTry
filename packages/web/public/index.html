@@ -63,7 +63,7 @@
     .ops-rows{display:grid;gap:6px;font:400 10px var(--mono);color:var(--muted)}.ops-rows div{display:flex;justify-content:space-between;gap:10px}.ops-rows b{color:var(--ink);font-weight:700}
     .ops-failures{margin-top:10px;font:400 9px/1.6 var(--mono);color:#8a4b4b}
     .submit-panel{margin-top:16px;border:1px solid var(--line);background:var(--white);padding:15px}.submit-panel summary{font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.08em;cursor:pointer}.submit-panel p{font-size:12px;color:var(--muted);margin:12px 0;line-height:1.6}.submit-panel code{font:400 11px var(--mono);background:#f0f1ec;padding:1px 4px}
-    #manifest-input{width:100%;min-height:150px;border:1px solid var(--line);padding:11px;font:400 11px/1.55 var(--mono);background:#fbfbf9;resize:vertical}
+    #manifest-input{width:100%;min-height:330px;border:1px solid var(--line);padding:11px;font:400 12px/1.55 var(--code);background:#fbfbf9;resize:vertical}
     .validate-out{margin-top:12px;font:400 11px/1.7 var(--mono);padding:11px;border-left:3px solid var(--line);background:#f7f8f4}.validate-out.ok{border-left-color:#1f9d55}.validate-out.bad{border-left-color:#c0392b;color:#8a3b30}.validate-out pre{white-space:pre-wrap;word-break:break-word;margin:8px 0 0;font:400 11px/1.6 var(--code);color:var(--muted);max-height:200px;overflow:auto}
     .withheld{margin-top:14px;border:1px dashed var(--line);padding:13px 15px;background:#faf9f5}.withheld h4{font:700 9px var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 8px}.withheld div{font:400 11px/1.6 var(--mono);color:var(--muted)}.withheld b{color:var(--ink)}
     .receipt{border-left:5px solid var(--lime)}.receipt-body{font:400 12px/1.9 var(--mono);color:var(--muted);margin:18px 0}
@@ -165,12 +165,28 @@
               <div id="withheld" class="withheld hidden"></div>
               <details class="submit-panel">
                 <summary>Add your own app to the catalog</summary>
-                <p>Paste an <code>opentry.yaml</code>. This validates it the same way the
-                catalog loader does — clamping, per-family field rules, blocked env keys —
-                and checks the rendered Import YAML against Zerops' own published schema.
-                Nothing is provisioned or installed.</p>
-                <textarea id="manifest-input" spellcheck="false"
-                  placeholder="version: 1&#10;app:&#10;  slug: my-app&#10;  name: My App&#10;..."></textarea>
+                <p>Here is a real <code>opentry.yaml</code> for an app that is <em>not</em> in
+                the catalog — press <b>Validate manifest</b>, or replace it with your own. It is
+                checked exactly as the catalog loader checks it — clamping, per-family field
+                rules, blocked env keys — and the rendered Import YAML is validated against
+                Zerops' own published schema. Nothing is provisioned or installed.</p>
+                <textarea id="manifest-input" spellcheck="false">version: 1
+app:
+  slug: plausible
+  name: Plausible Analytics
+  tagline: Privacy-friendly analytics, self-hosted
+  license: AGPL-3.0
+  capabilities: { outboundHttp: false, codeExecution: false }
+trial:
+  ttlMinutes: 30
+  entry: { service: app, port: 8000 }
+infra:
+  services:
+    - { hostname: db, type: postgresql@16, mode: NON_HA }
+    - { hostname: events, type: clickhouse@25.3, mode: NON_HA }
+    - { hostname: app, type: docker@26.1, verticalAutoscaling: { cpu: 2, ram: 2, disk: 5 } }
+verify:
+  - { name: Application responds, kind: http, path: /api/health }</textarea>
                 <button id="validate-btn" class="btn btn-dark">Validate manifest</button>
                 <div id="validate-out" class="validate-out hidden"></div>
               </details>
@@ -542,6 +558,11 @@
       const box = $('validate-out');
       const button = $('validate-btn');
       box.classList.remove('hidden', 'ok', 'bad');
+      if (!$('manifest-input').value.trim()) {
+        box.classList.add('bad');
+        box.textContent = 'Paste a manifest first — or reload the page for the example.';
+        return;
+      }
       box.textContent = 'Validating…';
       button.disabled = true;
       try {
