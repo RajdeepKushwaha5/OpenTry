@@ -9,6 +9,11 @@ the import succeeds, the service reports healthy, and nothing works.
 Written up for the Zerops team as much as for anyone else. Every claim here was
 observed against the live API, and the fix that worked is included.
 
+**Re-verified 10 August 2026.** Findings 1, 2, 3, 5, 8, 9, 10, 13, 17 and 18
+were re-tested against the live API and the exact responses are quoted below.
+Doing that corrected four of them — see 1, 5, 8 and 10 — and the measured
+provisioning times had moved far enough to be worth a section of their own.
+
 ---
 
 ## The pattern worth fixing first
@@ -28,20 +33,24 @@ turned most of the entries below into ten-second fixes.
 
 ### 1. Personal access tokens do not work on `/auth/info`
 
-`GET /auth/info` (operationId `getUserInfo`) returns **401** for a personal
-access token. The endpoint that accepts a PAT is `GET /user/info`.
-
-The OpenAPI spec documents one security scheme — `httpAuthorizationHeaderBearer`
-— for both, so there is no way to tell them apart from the spec. The first
-assumption is that the token is bad.
+`GET /auth/info` (operationId `getUserInfo`) refuses a personal access token.
+The endpoint that accepts a PAT is `GET /user/info`.
 
 ```
-GET /auth/info  →  401 {"error":{"code":"notAuthorized"}}
+GET /auth/info  →  403 {"error":{"code":"notAllowedForApplicationToken"}}
 GET /user/info  →  200 {..., clientUserList:[{clientId: "..."}]}
 ```
 
-**Suggestion:** note the session-only scope on `/auth/info`, or return an error
-code that distinguishes "wrong credential type" from "invalid credential".
+The OpenAPI spec documents one security scheme — `httpAuthorizationHeaderBearer`
+— for both, so there is nothing in the spec to suggest one of them will not
+take your token. The operationId makes it worse: `getUserInfo` sits on
+`/auth/info`, not on `/user/info`.
+
+**Credit where due:** the error code is good. `notAllowedForApplicationToken`
+says exactly what is wrong, which is more than most APIs manage. The gap is in
+the spec, not the response.
+
+**Suggestion:** note the session-only scope on `/auth/info` in the reference.
 
 ---
 
@@ -93,15 +102,21 @@ This one cost the most time, because each variant looks like the others.
 | Object storage | `verticalAutoscaling` entirely | `objectStorageSize` |
 | Docker (VM) | min/max **ranges** | fixed `cpu`, `ram`, `disk` |
 
-Only the database case produces a clear error:
+Only the database case produces a clear error, and even then the useful part is
+buried two levels down. The top-level message is generic:
 
+```json
+{ "code": "projectImportInvalidParameter", "message": "Invalid parameter provided.",
+  "meta": [ { "metadata": {
+      "db.minContainers": ["setting min containers not supported"],
+      "hostname": ["db"] } } ] }
 ```
-db.minContainers: ["setting min containers not supported"]
-```
+
+Read only `error.message` — the obvious thing to log — and you learn nothing.
 
 Sending min/max ranges to a **Docker** service is accepted at import, and the
-VM then never initialises. There is no error anywhere — the service simply sits
-in `CREATING`.
+VM then never initialises. There is no error anywhere: the service sits in
+`READY_TO_DEPLOY` until something else times out.
 
 ### 6. Docker services have no build phase, and a `build:` section breaks them
 
@@ -128,14 +143,19 @@ Strings are accepted by the import endpoint and then **no build is ever
 triggered**. Validating against Zerops' own published JSON Schema catches this
 in milliseconds; the API does not.
 
-### 8. Custom env vars cannot start with `ZEROPS_`
+### 8. `ZEROPS_`-prefixed keys are rejected in `envSecrets` — but accepted in `envVariables`
 
 ```
 userDataZeropsPrefixForbidden: Custom env variables with 'ZEROPS_' prefix are forbidden.
 ```
 
-Clear error, correctly rejected — noted only because `ZEROPS_TOKEN` is the
+Clear error, correctly rejected, and noted mainly because `ZEROPS_TOKEN` is the
 obvious name for a Zerops token and nothing warns you until import time.
+
+The part worth reporting is the inconsistency. That rejection fires for
+`envSecrets`. The **same key in `envVariables` imports without complaint** — we
+retested both deliberately. Whichever behaviour is intended, the two blocks
+disagree about a rule described as a global prohibition.
 
 ### 9. Env keys collide case-insensitively with generated ones
 
@@ -150,17 +170,33 @@ check ignores case. `HOSTNAME` is a very common Docker env var — Umami, among
 others, expects it. Workaround: pass it inline in the `docker run` command
 instead of declaring it on the service.
 
-### 10. The YAML preprocessor reads comments
+Same split as finding 8: this fires for `envSecrets`, while `HOSTNAME` in
+`envVariables` is accepted at import.
 
-Writing the random-string generator's literal syntax inside a `#` comment — to
-*explain* it — fails the import:
+### 10. The YAML preprocessor evaluates directives inside `#` comments
+
+Writing a preprocessor directive inside a comment — to *explain* it — is parsed
+as a directive. A well-formed one is evaluated silently, so you never notice. A
+malformed one fails the whole import:
 
 ```
+# SALT: <@generateRandomString>          <-- no argument, inside a comment
 yamlPreprocessingError: variable [] not found
 ```
 
-The preprocessor does not skip comments. Documenting a preprocessor directive
-in the file that uses it is a natural thing to do, and it breaks the file.
+The response metadata says plainly what happened:
+
+```json
+{ "item": "generateRandomString", "itemType": "function",
+  "positionLine": "5", "positionColumn": "33", "positionNear": "g>" }
+```
+
+Line 5, column 33 is **inside the comment**. Documenting a preprocessor
+directive in the file that uses it is a natural thing to do, and it breaks the
+file — with an error that never mentions comments.
+
+**Suggestion:** skip `#` comments in the preprocessing pass, or say in the
+reference that they are evaluated.
 
 ### 11. The preprocessor evaluates per occurrence
 
@@ -216,16 +252,17 @@ never work.
 
 A Docker service can sit in `READY_TO_DEPLOY` for several minutes on a full
 kernel boot. Our stuck-detector originally fired at 150s and produced a
-confidently wrong diagnosis. We now allow 420s for VMs and 150s for containers.
+confidently wrong diagnosis. We now allow 600s for VMs and 150s for containers.
 
 The docs do mention VMs boot slower; they do not give an order of magnitude,
 and that is the number you need to build a timeout.
 
 ### 16. Image size dominates provisioning time
 
-Stirling PDF's image (~2.5 GB, bundling LibreOffice and OCR) exceeded a
-12-minute ceiling on the pull alone. Umami (~200 MB) provisions in 264s
-end-to-end including a managed Postgres.
+Stirling PDF's image (bundling LibreOffice and OCR) exceeded a 12-minute
+ceiling on the pull alone and never started. Umami, at a couple of hundred MB,
+provisions end-to-end including a managed Postgres — see the measured times
+below.
 
 For anything provisioning on demand, image size is the number to optimise.
 
@@ -282,18 +319,36 @@ whose variables differ from the deployed set.
 
 ---
 
-## Measured provisioning times
+## Measured provisioning times, and a warning about them
 
 Full end-to-end, from `POST .../project/import` to a URL serving verified
-traffic, including a managed PostgreSQL:
+traffic, including a managed PostgreSQL.
 
-| App | Shape | Time |
-|---|---|---|
-| Umami | Docker + Postgres | **264s** |
-| Metabase | Docker + Postgres (JVM) | **264s** |
-| Vikunja | Docker + Postgres | **265s** |
-| n8n | Docker + Postgres | **310s** |
-| Node.js recipe | native runtime + Postgres | **296s** |
+**These numbers moved substantially during the build, on unchanged manifests.**
+Both sets are real; the second is what the platform does now.
+
+| App | Shape | First measured (7 Aug) | Now (10 Aug, p50 / p95) |
+|---|---|---|---|
+| Umami | Docker + Postgres | 264s | **732s** / 766s |
+| Metabase | Docker + Postgres (JVM) | 264s | **726s** / 794s |
+| Vikunja | Docker + Postgres | 265s | **755s** / 1001s |
+| n8n | Docker + Postgres | 310s | **666s** / 741s |
+| Node.js recipe | native runtime + Postgres | 296s | not re-measured |
+
+Roughly 2.4x slower, three days apart, same manifests. We have no visibility
+into why — it could be regional load, image-registry throughput, or scheduling.
+
+**This is the finding, not a footnote.** Our provisioning timeout was 12
+minutes, chosen against the first column with what looked like generous
+headroom. Once real completion times reached 749s, a 720s ceiling sat *inside*
+the normal spread and behaved exactly as you would expect — it failed 60% of
+provisions with `pollUntil: timed out after 721s` while the successes were
+finishing at 749s. Every one of those looked like an infrastructure fault. It
+was a stale constant.
+
+If you build anything with a timeout against Zerops provisioning, derive it
+from a recent measurement and leave real headroom. Ours is now 20 minutes, and
+vikunja's p95 of 1001s says that is not excessive.
 
 A native runtime built from git is **not** faster than pulling a Docker image —
 `npm install` in the build pipeline costs about what an image pull does.
@@ -306,12 +361,13 @@ Worth saying, since the rest of this is a list of problems:
 
 - **`POST /client/{id}/project/import`** is the reason this project exists. Being
   able to declare a private network, a managed database, a runtime, TLS and
-  routing in one YAML and get it all back in under five minutes is not
-  something we found elsewhere at this price.
+  routing in one YAML and get it all back — currently in about twelve minutes —
+  is not something we found elsewhere at this price.
 - **Project tags** are first-class and queryable, which is what makes a
   tag-guarded delete safe enough to run unattended.
 - **Per-minute billing with a free Lightweight core** is what makes disposable
-  infrastructure economically real. A 30-minute trial costs about **$0.004**.
+  infrastructure economically real. A 30-minute trial costs about **$0.0086**,
+  estimated from published list prices.
 - **The published import JSON Schema** catches most manifest errors offline in
   milliseconds. It deserves to be more prominent — it would have prevented
   entries 5 and 7 above.
