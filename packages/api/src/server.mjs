@@ -19,6 +19,7 @@ import { LIMITS } from '../../shared/src/limits.mjs';
 import { LeaseStore, visitorFingerprint, LeaseState } from '../../controller/src/store.mjs';
 import { issueChallenge, verifySolution, DIFFICULTY } from '../../shared/src/proof-of-work.mjs';
 import { renderBadge, badgeSnippets } from './badge.mjs';
+import { Metrics, Health } from '../../controller/src/metrics.mjs';
 import { estimateCostUsd, formatCost, monthlyEquivalentUsd } from '../../provisioner/src/cost.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -27,6 +28,8 @@ const PORT = Number(process.env.PORT ?? 3000);
 const catalog = await loadCatalog(join(ROOT, 'catalog'));
 const store = new LeaseStore();
 await store.migrate();
+
+const metrics = new Metrics({ store, catalog });
 
 const app = express();
 app.disable('x-powered-by');
@@ -175,6 +178,44 @@ app.get('/api/challenge', (req, res) => {
   const bits =
     manifest.app.capabilities.level === 'elevated' ? DIFFICULTY.elevated : DIFFICULTY.standard;
   res.json(issueChallenge(slug, bits));
+});
+
+/**
+ * Operational snapshot: failure rate, provisioning percentiles, spend, and
+ * whatever is stuck right now.
+ *
+ * Public, deliberately. It exposes no credentials, no project ids and no
+ * visitor data — and a system that spends money on its own behalf should be
+ * auditable by the people using it. It also means the demo can show that the
+ * numbers are real rather than asserted.
+ */
+app.get('/api/metrics', async (req, res) => {
+  const windowHours = Math.min(Math.max(Number(req.query.hours) || 24, 1), 168);
+  try {
+    res.json(await metrics.snapshot({ windowHours }));
+  } catch (err) {
+    res.status(500).json({ error: `Could not build metrics: ${err.message}` });
+  }
+});
+
+/**
+ * Liveness for an uptime monitor: 200 when healthy, 503 when provisioning is
+ * failing. /health only proves the process is up, which is exactly the kind of
+ * green tick that hides a broken system.
+ */
+app.get('/api/health/deep', async (_req, res) => {
+  try {
+    const snap = await metrics.snapshot({ windowHours: 6 });
+    const ok = snap.health === Health.OK || snap.health === Health.IDLE;
+    res.status(ok ? 200 : 503).json({
+      status: snap.health,
+      failureRate: snap.failureRate,
+      inUse: snap.capacity.inUse,
+      ceiling: snap.capacity.ceiling,
+    });
+  } catch (err) {
+    res.status(503).json({ status: 'unknown', error: err.message });
+  }
 });
 
 /** Claim a warm trial. */
