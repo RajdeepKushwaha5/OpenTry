@@ -162,6 +162,7 @@ Findings from working against the live API, each of which cost a debugging cycle
 | Per-family fields | Databases reject `minContainers` (use `mode`). Object storage rejects `verticalAutoscaling`. Docker VMs reject min/max ranges (use fixed `cpu`/`ram`/`disk`). All three are accepted at import and then fail silently |
 | Docker has no build phase | The base list shows `Build: -`. A `build:` section on a Docker service prevents it from ever starting |
 | Embedded `zeropsYaml` | `build.base` and `build.deployFiles` must be **arrays**, unlike a repo-level `zerops.yml` |
+| Case-insensitive env collision | `HOSTNAME` collides with the auto-generated `hostname` and fails the import with `userDataDuplicateKey`. Pass such values inline in the run command instead |
 | Env isolation | Services cannot see each other's variables by default; reference them explicitly (`${db_connectionString}`) |
 | Preprocessor scope | `<@generateRandomString>` is evaluated per occurrence — a value two services must share belongs at project scope |
 

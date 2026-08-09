@@ -14,12 +14,15 @@
 const DEFAULT_BASE = 'https://api.app-prg1.zerops.io/api/rest/public';
 
 export class ZeropsError extends Error {
-  constructor(message, { status, body, path } = {}) {
+  constructor(message, { status, body, path, transient = false, cause } = {}) {
     super(message);
     this.name = 'ZeropsError';
     this.status = status;
     this.body = body;
     this.path = path;
+    /** True for network/timeout/5xx failures that are worth retrying. */
+    this.transient = transient;
+    if (cause) this.cause = cause;
   }
 }
 
@@ -40,15 +43,19 @@ export class ZeropsClient {
    * @param {string} [opts.baseUrl]
    * @param {number} [opts.timeoutMs]
    */
-  constructor({ token, baseUrl = DEFAULT_BASE, timeoutMs = 30_000 } = {}) {
+  constructor({ token, baseUrl = DEFAULT_BASE, timeoutMs = 30_000, onRetry } = {}) {
     if (!token) throw new Error('ZeropsClient requires a token');
     this.token = token;
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.timeoutMs = timeoutMs;
+    this.onRetry = onRetry;
     this._clientId = null;
   }
 
-  async request(method, path, body) {
+  /**
+   * One HTTP attempt. Wrapped by `request`, which handles retries.
+   */
+  async #attempt(method, path, body) {
     const url = `${this.baseUrl}${path}`;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
@@ -85,12 +92,57 @@ export class ZeropsClient {
       return parsed;
     } catch (err) {
       if (err.name === 'AbortError') {
-        throw new ZeropsError(`${method} ${path} timed out after ${this.timeoutMs}ms`, { path });
+        throw new ZeropsError(`${method} ${path} timed out after ${this.timeoutMs}ms`, {
+          path,
+          transient: true,
+        });
+      }
+      // Undici surfaces DNS/TCP/TLS problems as a bare "fetch failed".
+      if (!(err instanceof ZeropsError)) {
+        throw new ZeropsError(`${method} ${path} -> ${err.message}`, {
+          path,
+          transient: true,
+          cause: err,
+        });
       }
       throw err;
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Perform a request, retrying transient failures with exponential backoff.
+   *
+   * WHY: provisioning holds a connection open for minutes at a time, and a
+   * single dropped packet used to fail an entire trial — worse, it could fail
+   * the CLEANUP too, orphaning a real project that then billed until the
+   * reaper noticed. A network blip must not cost infrastructure.
+   *
+   * Retried: network errors, timeouts, 429, and 5xx.
+   * Never retried: 4xx other than 429 — those are our bug, and repeating a
+   * rejected request just wastes time. POSTs are still retried because every
+   * mutating call we make is either idempotent or guarded elsewhere (project
+   * import is preceded by a duplicate-name check; delete is tag-guarded).
+   */
+  async request(method, path, body, { retries = 4 } = {}) {
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await this.#attempt(method, path, body);
+      } catch (err) {
+        lastErr = err;
+        const retryable =
+          err.transient === true || err.status === 429 || (err.status >= 500 && err.status < 600);
+        if (!retryable || attempt === retries) throw err;
+
+        // 400ms, 800ms, 1.6s, 3.2s — plus jitter so parallel callers spread out.
+        const delay = 400 * 2 ** attempt + Math.random() * 250;
+        this.onRetry?.({ method, path, attempt: attempt + 1, delay, error: err.message });
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    throw lastErr;
   }
 
   // --- identity -----------------------------------------------------------
