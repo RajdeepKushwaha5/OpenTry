@@ -144,10 +144,16 @@ app.get('/api/apps/:slug/embed', (req, res) => {
   if (!manifest || manifest.app.hidden) {
     return res.status(404).json({ error: `Unknown app "${slug}"` });
   }
-  // Honour the proxy headers Zerops' L7 balancer sets, so snippets carry the
-  // public URL rather than an internal one.
-  const proto = req.headers['x-forwarded-proto'] ?? 'https';
-  const host = req.headers['x-forwarded-host'] ?? req.headers.host;
+  // Take the host from the proxy headers so snippets carry the public URL,
+  // but force https for anything that is not local.
+  //
+  // Zerops' L7 balancer terminates TLS and forwards the internal hop as
+  // x-forwarded-proto: http, so trusting that header produced http:// badge
+  // URLs — which GitHub blocks as mixed content, leaving maintainers with a
+  // broken image in their README.
+  const host = req.headers['x-forwarded-host'] ?? req.headers.host ?? '';
+  const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(host);
+  const proto = isLocal ? 'http' : 'https';
   res.json(badgeSnippets({ origin: `${proto}://${host}`, slug, appName: manifest.app.name }));
 });
 
