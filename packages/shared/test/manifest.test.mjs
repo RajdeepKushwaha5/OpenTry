@@ -253,3 +253,42 @@ describe('rendered import YAML', () => {
     assert.ok(projectName.startsWith('opentry-'));
   });
 });
+
+describe('docker port collision guard', () => {
+  const dockerOnPort = (port) => `
+version: 1
+app: { slug: t, name: T }
+trial: { ttlMinutes: 10, entry: { service: app, port: ${port} } }
+infra:
+  services:
+    - hostname: app
+      type: docker@26.1
+`;
+
+  test('rejects port 80 on a docker service', () => {
+    // Cost two catalog candidates before it was understood: the service reports
+    // ACTIVE, the URL resolves, and nothing ever answers.
+    assert.throws(() => parseManifest(dockerOnPort(80)), /collides with the project's L7 balancer/);
+  });
+
+  test('rejects port 443 too', () => {
+    assert.throws(() => parseManifest(dockerOnPort(443)), /collides/);
+  });
+
+  test('allows a high port', () => {
+    assert.equal(parseManifest(dockerOnPort(8080)).trial.entry.port, 8080);
+  });
+
+  test('does not restrict non-docker services', () => {
+    const m = parseManifest(`
+version: 1
+app: { slug: t, name: T }
+trial: { ttlMinutes: 10, entry: { service: app, port: 80 } }
+infra:
+  services:
+    - hostname: app
+      type: nodejs@22
+`);
+    assert.equal(m.trial.entry.port, 80);
+  });
+});

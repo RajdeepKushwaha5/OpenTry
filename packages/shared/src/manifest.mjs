@@ -168,6 +168,23 @@ export function parseManifest(yamlText, { source = 'opentry.yaml' } = {}) {
     );
   }
 
+  // A Docker container under --network=host that binds 80 or 443 collides with
+  // the project's own L7 balancer. This fails in the most misleading way the
+  // platform offers: the service reports ACTIVE, the subdomain resolves, and
+  // nothing ever answers. Two catalog candidates were lost to it (Excalidraw,
+  // IT-Tools) before it was understood, both being nginx images that ignore
+  // any port override and bind 80 regardless. Reject it up front.
+  const entrySvc = services.find((sv) => sv.hostname === String(entry.service));
+  if (/^docker@/i.test(String(entrySvc?.type)) && [80, 443].includes(entryPort)) {
+    throw new ManifestError(
+      `port ${entryPort} cannot be used by a docker service. Under --network=host it ` +
+        `collides with the project's L7 balancer: the service reports ACTIVE and the URL ` +
+        `resolves, but nothing responds. Use a high port, and pick an image whose listen ` +
+        `port is configurable.`,
+      'trial.entry.port',
+    );
+  }
+
   return {
     version: 1,
     app: {
