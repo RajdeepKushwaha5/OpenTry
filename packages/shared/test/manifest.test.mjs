@@ -292,3 +292,37 @@ infra:
     assert.equal(m.trial.entry.port, 80);
   });
 });
+
+describe('a manifest cannot widen its own ceiling', () => {
+  const va = (body) => parseManifest(base(`      verticalAutoscaling:\n${body}`)).services[0].verticalAutoscaling;
+
+  test('minCpu is clamped even when no maxCpu is declared', () => {
+    // The bypass: clamping used to key off max*, so a lone min* rode through
+    // untouched and pinned dedicated cores for the whole TTL.
+    assert.equal(va('        minCpu: 8').minCpu, LIMITS.maxCpuPerService);
+    assert.equal(va('        minRam: 64').minRam, LIMITS.maxRamGbPerService);
+    assert.equal(va('        minDisk: 500').minDisk, LIMITS.maxDiskGbPerService);
+  });
+
+  test('non-numeric resources fall back to the ceiling, never NaN', () => {
+    // Math.min(Number("lots"), 2) is NaN, and NaN serialises into the YAML.
+    for (const junk of ['"lots"', '"1e9999"', '-4', '0', '[]']) {
+      const got = va(`        maxCpu: ${junk}`).maxCpu;
+      assert.ok(Number.isFinite(got) && got > 0 && got <= LIMITS.maxCpuPerService, `maxCpu: ${junk} -> ${got}`);
+    }
+  });
+
+  test('object storage size is capped', () => {
+    const svc = parseManifest(
+      base('    - hostname: files\n      type: objectstorage\n      objectStorageSize: 900'),
+    ).services.find((s) => s.hostname === 'files');
+    assert.equal(svc.objectStorageSize, LIMITS.maxObjectStorageGb);
+  });
+
+  test('HA is refused — three containers for a 30-minute throwaway', () => {
+    const svc = parseManifest(
+      base('    - hostname: db\n      type: postgresql@16\n      mode: HA'),
+    ).services.find((s) => s.hostname === 'db');
+    assert.equal(svc.mode, 'NON_HA');
+  });
+});

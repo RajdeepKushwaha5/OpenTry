@@ -132,7 +132,12 @@ services:
     priority: 40
     enableSubdomainAccess: true
     minContainers: 1
-    maxContainers: 1   # rate limiter is in-process; scaling out needs it moved to Valkey
+    # Pinned to one replica. The proof-of-work single-use check is a module-level
+    # Set in shared/src/proof-of-work.mjs, so replicas do not share it and one
+    # solved challenge could be spent once per replica. (The rate limiter is
+    # already in Postgres and does not constrain this.) Scaling out means moving
+    # that Set into the database first.
+    maxContainers: 1
     buildFromGit: https://github.com/RajdeepKushwaha5/OpenTry
     zeropsSetup: api
     verticalAutoscaling:

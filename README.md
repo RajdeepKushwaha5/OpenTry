@@ -162,7 +162,7 @@ See [DEPLOY.md](DEPLOY.md) for the full guide.
 ## Tests
 
 ```bash
-npm test        # 65 tests, no dependencies beyond Node
+npm test        # 72 tests, no dependencies beyond Node
 npm run test:db # concurrency tests — needs a real Postgres
 ```
 

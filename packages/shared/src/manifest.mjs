@@ -218,22 +218,40 @@ export function parseManifest(yamlText, { source = 'opentry.yaml' } = {}) {
  * Also strips fields the target service family does not accept — Zerops
  * rejects the whole import if, say, a database is given `minContainers`.
  */
+/**
+ * Coerce a manifest-supplied resource number into a usable one.
+ *
+ * `Math.min(Number(x), ceiling)` is not a clamp when `x` is `"two"` or `{}` —
+ * it yields NaN, which serialises into the Import YAML and is then either
+ * rejected far downstream or, worse, interpreted. Anything that is not a
+ * positive finite number falls back to the ceiling rather than propagating.
+ */
+function bounded(value, ceiling, fallback = ceiling) {
+  if (value === undefined || value === null) return fallback;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(n, ceiling);
+}
+
 function clampService(svc) {
   const type = String(svc.type);
 
   // Object storage is sized by objectStorageSize alone.
   if (isObjectStorage(type)) {
     const { verticalAutoscaling, minContainers, maxContainers, mode, ...rest } = svc;
-    return rest;
+    return {
+      ...rest,
+      objectStorageSize: bounded(rest.objectStorageSize, LIMITS.maxObjectStorageGb, 1),
+    };
   }
 
   // Docker VMs take fixed cpu/ram/disk, never min/max ranges.
   if (isDockerService(type)) {
     const va = svc.verticalAutoscaling ?? {};
     const fixed = {
-      cpu: Math.min(Number(va.cpu ?? va.maxCpu ?? 2), LIMITS.maxCpuPerService),
-      ram: Math.min(Number(va.ram ?? va.maxRam ?? 2), LIMITS.maxRamGbPerService),
-      disk: Math.min(Number(va.disk ?? va.maxDisk ?? 5), LIMITS.maxDiskGbPerService),
+      cpu: bounded(va.cpu ?? va.maxCpu, LIMITS.maxCpuPerService),
+      ram: bounded(va.ram ?? va.maxRam, LIMITS.maxRamGbPerService),
+      disk: bounded(va.disk ?? va.maxDisk, LIMITS.maxDiskGbPerService, 5),
     };
     return {
       ...svc,
@@ -247,16 +265,17 @@ function clampService(svc) {
   const va = svc.verticalAutoscaling ?? {};
   const clampedVa = { ...va };
 
-  if (va.maxCpu !== undefined) clampedVa.maxCpu = Math.min(Number(va.maxCpu), LIMITS.maxCpuPerService);
-  if (va.maxRam !== undefined) clampedVa.maxRam = Math.min(Number(va.maxRam), LIMITS.maxRamGbPerService);
-  if (va.maxDisk !== undefined) clampedVa.maxDisk = Math.min(Number(va.maxDisk), LIMITS.maxDiskGbPerService);
-  // A min above the clamped max is invalid to Zerops; pull it down too.
-  if (clampedVa.minCpu !== undefined && clampedVa.maxCpu !== undefined)
-    clampedVa.minCpu = Math.min(Number(clampedVa.minCpu), clampedVa.maxCpu);
-  if (clampedVa.minRam !== undefined && clampedVa.maxRam !== undefined)
-    clampedVa.minRam = Math.min(Number(clampedVa.minRam), clampedVa.maxRam);
-  if (clampedVa.minDisk !== undefined && clampedVa.maxDisk !== undefined)
-    clampedVa.minDisk = Math.min(Number(clampedVa.minDisk), clampedVa.maxDisk);
+  if (va.maxCpu !== undefined) clampedVa.maxCpu = bounded(va.maxCpu, LIMITS.maxCpuPerService);
+  if (va.maxRam !== undefined) clampedVa.maxRam = bounded(va.maxRam, LIMITS.maxRamGbPerService);
+  if (va.maxDisk !== undefined) clampedVa.maxDisk = bounded(va.maxDisk, LIMITS.maxDiskGbPerService);
+
+  // `min*` is clamped against the ceiling too, not only against `max*`. A
+  // manifest declaring `minCpu: 8` and no `maxCpu` would otherwise pass
+  // through untouched and hold eight dedicated cores for its whole TTL — the
+  // exact "a manifest cannot widen its own ceiling" property this file claims.
+  if (va.minCpu !== undefined) clampedVa.minCpu = bounded(va.minCpu, clampedVa.maxCpu ?? LIMITS.maxCpuPerService, 1);
+  if (va.minRam !== undefined) clampedVa.minRam = bounded(va.minRam, clampedVa.maxRam ?? LIMITS.maxRamGbPerService, 1);
+  if (va.minDisk !== undefined) clampedVa.minDisk = bounded(va.minDisk, clampedVa.maxDisk ?? LIMITS.maxDiskGbPerService, 1);
 
   const out = { ...svc, verticalAutoscaling: clampedVa };
 
@@ -269,7 +288,10 @@ function clampService(svc) {
     // Databases and shared storage: fixed container count, chosen via mode.
     delete out.minContainers;
     delete out.maxContainers;
-    out.mode = svc.mode === 'HA' ? 'HA' : 'NON_HA';
+    // Always NON_HA. HA runs three containers instead of one — triple the cost
+    // for a 30-minute throwaway whose data is deleted with the project. There
+    // is no trial for which a manifest asking for HA is answering a real need.
+    out.mode = 'NON_HA';
   }
 
   return out;

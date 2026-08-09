@@ -385,6 +385,14 @@ app.get('/api/trials/mine', async (req, res) => {
 app.get('/api/trials/:id', async (req, res) => {
   const lease = await store.getLease(req.params.id);
   if (!lease) return res.status(404).json({ error: 'Unknown trial' });
+
+  // Ownership check. `shape()` includes the URL and the generated admin
+  // password, and trial ids are not secret — /api/pool/building publishes the
+  // id of whatever is being provisioned. Without this, anyone could read that
+  // id and collect the credentials of a warm trial before a visitor claimed it.
+  if (lease.state !== LeaseState.CLAIMED || lease.visitor_hash !== visitorFingerprint(req)) {
+    return res.status(403).json({ error: 'Not your trial' });
+  }
   res.json({ trial: shape(lease) });
 });
 
@@ -421,12 +429,29 @@ app.get('/api/trials/:id/events', async (req, res) => {
     const events = await store.listEvents(req.params.id, lastId);
     for (const e of events) {
       lastId = e.id;
-      send(e.id, 'step', e);
+      // Only the human-readable timeline. Event metadata carries internal
+      // project ids and URLs the controller recorded; none of it is public.
+      send(e.id, 'step', {
+        id: e.id,
+        at_ms: e.at_ms,
+        step: e.step,
+        status: e.status,
+        message: e.message,
+      });
     }
 
     const current = await store.getLease(req.params.id);
     if (current && ['READY_UNCLAIMED', 'CLAIMED'].includes(current.state)) {
-      send(lastId + 1, 'ready', shape(current));
+      // This stream is public — the UI watches the pool backfill so visitors
+      // can see real provisioning happen. A warm trial has NOT been claimed,
+      // so its URL and generated password must not travel down it. Claiming
+      // through POST /api/trials is the only way to receive them.
+      const owned =
+        current.state === LeaseState.CLAIMED &&
+        current.visitor_hash === visitorFingerprint(req);
+      send(lastId + 1, 'ready', owned
+        ? shape(current)
+        : { id: current.id, app: current.app_slug, state: 'ready' });
       break;
     }
     if (current && ['FAILED', 'DESTROYED'].includes(current.state)) {

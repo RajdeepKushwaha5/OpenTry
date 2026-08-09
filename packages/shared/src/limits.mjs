@@ -16,6 +16,10 @@ export const LIMITS = Object.freeze({
   maxRamGbPerService: 2,
   maxDiskGbPerService: 10,
   maxContainersPerService: 1,
+  /** Object storage is billed per GB stored and takes no verticalAutoscaling,
+   *  so it is the one resource a manifest could otherwise request without a
+   *  ceiling applying to it. */
+  maxObjectStorageGb: 5,
 
   /** Ceiling per trial project. */
   maxServicesPerTrial: 4,
