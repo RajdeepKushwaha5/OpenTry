@@ -19,7 +19,10 @@ import { LIMITS } from '../../shared/src/limits.mjs';
 import { LeaseStore, visitorFingerprint, LeaseState } from '../../controller/src/store.mjs';
 import { issueChallenge, verifySolution, DIFFICULTY } from '../../shared/src/proof-of-work.mjs';
 import { renderBadge, badgeSnippets } from './badge.mjs';
+import { parseManifest, renderImportYaml, generateTrialId } from '../../shared/src/manifest.mjs';
+import { validateImportYaml } from '../../shared/src/validate-import.mjs';
 import { Metrics, Health } from '../../controller/src/metrics.mjs';
+import { appPolicy, partitionCatalog, POLICY_REASONS } from '../../shared/src/policy.mjs';
 import { estimateCostUsd, formatCost, monthlyEquivalentUsd } from '../../provisioner/src/cost.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -35,32 +38,35 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '16kb' }));
 
-// -- tiny in-memory rate limiter --------------------------------------------
-// Deliberately not a dependency: one counter per fingerprint, reset on a
-// rolling window. Enough to stop a script hammering claim attempts, and it
-// costs nothing. Real abuse protection is the per-visitor trial cap and the
-// global concurrency ceiling, both enforced in the database.
-const hits = new Map();
+// -- rate limiting -----------------------------------------------------------
+// Backed by Postgres, not process memory. An in-process counter pins the API
+// to one container: run two and each enforces its own limit, silently doubling
+// the real ceiling. This costs one upsert per request and makes the service
+// genuinely horizontally scalable.
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 30;
+const RATE_MAX = Number(process.env.OPENTRY_RATE_MAX ?? 30);
 
-function rateLimit(req, res, next) {
-  const key = visitorFingerprint(req);
-  const now = Date.now();
-  const rec = hits.get(key);
-  if (!rec || now - rec.start > RATE_WINDOW_MS) {
-    hits.set(key, { start: now, n: 1 });
-    return next();
+async function rateLimit(req, res, next) {
+  try {
+    const key = visitorFingerprint(req);
+    const { allowed, retryAfterSeconds } = await store.hitRateLimit(key, {
+      windowMs: RATE_WINDOW_MS,
+      max: RATE_MAX,
+    });
+    if (!allowed) {
+      res.set('retry-after', String(retryAfterSeconds));
+      return res.status(429).json({ error: 'Too many requests.', retryAfterSeconds });
+    }
+    next();
+  } catch {
+    // Fail OPEN. A rate limiter that takes the whole API down when the
+    // database hiccups causes more harm than the abuse it prevents — and the
+    // real ceilings (one trial per visitor, global concurrency cap) still hold.
+    next();
   }
-  if (++rec.n > RATE_MAX) {
-    return res.status(429).json({ error: 'Too many requests. Wait a minute.' });
-  }
-  next();
 }
-setInterval(() => {
-  const cutoff = Date.now() - RATE_WINDOW_MS;
-  for (const [k, v] of hits) if (v.start < cutoff) hits.delete(k);
-}, RATE_WINDOW_MS).unref?.();
+
+setInterval(() => void store.pruneRateLimits(RATE_WINDOW_MS).catch(() => {}), 5 * 60_000).unref?.();
 
 app.use('/api', rateLimit);
 
@@ -69,7 +75,19 @@ app.use('/api', rateLimit);
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 app.get('/api/catalog', (_req, res) => {
-  res.json({ apps: publicCatalog(catalog) });
+  const { offered, withheld } = partitionCatalog(catalog);
+  const offeredSlugs = new Set(offered.map((o) => o.manifest.app.slug));
+  res.json({
+    apps: publicCatalog(catalog).filter((a) => offeredSlugs.has(a.slug)),
+    // Shown rather than hidden. An app missing with no explanation looks
+    // broken; an app missing WITH a reason explains the security model.
+    withheld: withheld.map(({ manifest, policy }) => ({
+      slug: manifest.app.slug,
+      name: manifest.app.name,
+      reason: policy.reason,
+      explanation: POLICY_REASONS[policy.reason] ?? policy.reason,
+    })),
+  });
 });
 
 /**
@@ -141,6 +159,73 @@ app.get('/badge/:slug.svg', async (req, res) => {
   res.send(renderBadge({ left: 'OpenTry', state }));
 });
 
+/**
+ * Validate a manifest a maintainer wrote, without provisioning anything.
+ *
+ * This is the self-service half. Previously adding an app meant opening a pull
+ * request and waiting to discover, minutes into a real provision, that a field
+ * was in the wrong place. Now a maintainer gets the same checks the catalog
+ * loader runs — clamping, per-family field rules, forbidden env keys — plus
+ * the rendered Zerops Import YAML validated against Zerops' own published
+ * JSON Schema, in milliseconds.
+ *
+ * Deliberately does NOT install anything. Accepting arbitrary manifests into a
+ * live catalog would let a stranger define infrastructure that we then pay
+ * for. Validation is safe to expose; installation is a reviewed pull request,
+ * and this endpoint produces everything that review needs.
+ */
+app.post('/api/manifests/validate', async (req, res) => {
+  const source = typeof req.body?.manifest === 'string' ? req.body.manifest : '';
+  if (!source.trim()) return res.status(400).json({ error: 'Send { manifest: "<yaml>" }' });
+  if (source.length > 64_000) return res.status(413).json({ error: 'Manifest too large.' });
+
+  let manifest;
+  try {
+    manifest = parseManifest(source, { source: 'submitted' });
+  } catch (err) {
+    return res.json({
+      valid: false,
+      stage: 'manifest',
+      errors: [{ path: err.path ?? null, message: err.message }],
+    });
+  }
+
+  const { yaml } = renderImportYaml(manifest, { trialId: generateTrialId() });
+  const schema = await validateImportYaml(yaml).catch((err) => ({
+    valid: true,
+    errors: [],
+    warnings: [`schema check unavailable: ${err.message}`],
+  }));
+
+  res.json({
+    valid: schema.valid,
+    stage: schema.valid ? 'ok' : 'schema',
+    app: {
+      slug: manifest.app.slug,
+      name: manifest.app.name,
+      capabilities: manifest.app.capabilities,
+      ttlMinutes: manifest.trial.ttlMinutes,
+      services: manifest.services.map((sv) => ({ hostname: sv.hostname, type: sv.type })),
+      checks: manifest.verify.map((v) => v.name),
+      seedSteps: manifest.seed.length,
+    },
+    // What the platform will actually receive, after clamping — so a
+    // maintainer can see exactly what their request was reduced to.
+    renderedYaml: yaml,
+    errors: schema.errors.map((message) => ({ message })),
+    warnings: schema.warnings,
+    // Elevated-risk entries will be withheld unless the operator opts in.
+    // Better to learn that here than after a pull request.
+    policyNote:
+      manifest.app.capabilities.level === 'elevated'
+        ? 'This app declares outbound network access, so most deployments will ' +
+          'withhold it unless OPENTRY_ALLOW_ELEVATED is set. Declare ' +
+          'capabilities.outboundHttp: false if that is not accurate.'
+        : null,
+    nextStep: `Open a pull request adding catalog/${manifest.app.slug}/opentry.yaml`,
+  });
+});
+
 /** Copy-paste snippets for a maintainer's README. */
 app.get('/api/apps/:slug/embed', (req, res) => {
   const slug = String(req.params.slug ?? '');
@@ -172,8 +257,12 @@ app.get('/api/apps/:slug/embed', (req, res) => {
 app.get('/api/challenge', (req, res) => {
   const slug = String(req.query.app ?? '');
   const manifest = catalog.get(slug);
-  if (!manifest || manifest.app.hidden) {
-    return res.status(404).json({ error: `Unknown app "${slug}"` });
+  const policy = appPolicy(manifest);
+  if (!policy.offered) {
+    return res.status(403).json({
+      error: POLICY_REASONS[policy.reason] ?? 'Not available.',
+      reason: policy.reason,
+    });
   }
   const bits =
     manifest.app.capabilities.level === 'elevated' ? DIFFICULTY.elevated : DIFFICULTY.standard;
@@ -222,8 +311,12 @@ app.get('/api/health/deep', async (_req, res) => {
 app.post('/api/trials', async (req, res) => {
   const slug = String(req.body?.app ?? '');
   const manifest = catalog.get(slug);
-  if (!manifest || manifest.app.hidden) {
-    return res.status(404).json({ error: `Unknown app "${slug}"` });
+  const policy = appPolicy(manifest);
+  if (!policy.offered) {
+    return res.status(403).json({
+      error: POLICY_REASONS[policy.reason] ?? 'Not available.',
+      reason: policy.reason,
+    });
   }
 
   // Proof of work before anything expensive happens.

@@ -44,6 +44,25 @@ project:
     # "yamlPreprocessingError: variable [] not found". Describe it in prose.
     OPENTRY_VISITOR_SALT: <@generateRandomString(<32>)>
 
+    # --- trial policy -------------------------------------------------------
+    # PROJECT scope on purpose: the controller decides what to warm and the API
+    # decides what to offer, so both must agree. Declaring these per-service
+    # would let them drift — the API could advertise an app the controller
+    # never warms.
+    #
+    # Offer apps that can make outbound network requests (n8n, Metabase).
+    # OFF by default in code; this is a deliberate opt-in for THIS deployment.
+    # Zerops has no egress filtering, so such an app in anonymous hands is
+    # effectively an open proxy for the length of its lease. Acceptable for a
+    # demonstration with a hard concurrency cap, a 30-minute TTL and
+    # proof-of-work on every claim. NOT acceptable for an unattended public
+    # service — leave it unset there and offer only standard-tier apps.
+    OPENTRY_ALLOW_ELEVATED: "true"
+
+    # Kill switch. Comma-separated slugs, read on every request, so an app can
+    # be withdrawn with an env change and a reload — no redeploy, seconds.
+    OPENTRY_DISABLED_APPS: ""
+
 services:
   # -------------------------------------------------------------------------
   # Postgres — the lease store. Private; nothing outside this project reaches it.
@@ -94,6 +113,10 @@ services:
       OPENTRY_WARM_PER_APP: "1"
       # Hard ceiling on trials alive at once — the blast-radius control.
       OPENTRY_MAX_CONCURRENT_TRIALS: "6"
+
+
+      # Optional: POST alerts here when provisioning health changes.
+      # OPENTRY_ALERT_WEBHOOK: https://hooks.example.com/...
 
   # -------------------------------------------------------------------------
   # API — public. Holds no Zerops credentials; talks only to Postgres.

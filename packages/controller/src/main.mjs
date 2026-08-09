@@ -20,6 +20,9 @@ import { ZeropsClient } from '../../provisioner/src/zerops-client.mjs';
 import { LeaseStore } from './store.mjs';
 import { WarmPool } from './pool.mjs';
 import { Reaper } from './reaper.mjs';
+import { Metrics } from './metrics.mjs';
+import { Alerter } from './alerts.mjs';
+import { appPolicy, elevatedAllowed } from '../../shared/src/policy.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const RECONCILE_INTERVAL_MS = Number(process.env.OPENTRY_RECONCILE_MS ?? 20_000);
@@ -51,11 +54,24 @@ async function main() {
 
   const pool = new WarmPool({ store, client, catalog, log });
   const reaper = new Reaper({ store, client, catalog, log });
+  const alerter = new Alerter({ metrics: new Metrics({ store, catalog }), log });
+
+  // Say out loud which apps this deployment will actually offer. An operator
+  // should never have to guess why a catalog entry is missing from the site.
+  for (const [slug, manifest] of catalog) {
+    if (manifest.app.hidden) continue;
+    const policy = appPolicy(manifest);
+    log(`[policy] ${slug}: ${policy.offered ? 'offered' : 'WITHHELD — ' + policy.reason}`);
+  }
+  if (!elevatedAllowed()) {
+    log('[policy] elevated-risk apps are OFF (set OPENTRY_ALLOW_ELEVATED=true to offer them)');
+  }
 
   // Sweep before warming: reclaim anything left over from a previous process
   // so we do not start provisioning on top of a full account.
   await reaper.sweep().catch((e) => log(`[reaper] initial sweep failed: ${e.message}`));
   reaper.start();
+  alerter.start();
 
   const tick = async () => {
     try {
@@ -79,6 +95,7 @@ async function main() {
     log(`[controller] ${signal} received, shutting down`);
     clearInterval(timer);
     reaper.stop();
+    alerter.stop();
     await store.close().catch(() => {});
     process.exit(0);
   };

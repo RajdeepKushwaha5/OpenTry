@@ -59,6 +59,7 @@
     .ops{border-top:1px solid var(--line);margin-top:16px}.ops-verdict{display:flex;align-items:center;gap:8px;font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.07em;margin-bottom:11px}.ops-verdict .lamp{width:8px;height:8px;border-radius:50%}.ops-verdict.ok .lamp{background:#1f9d55}.ops-verdict.degraded .lamp{background:var(--amber)}.ops-verdict.failing .lamp{background:#c0392b}.ops-verdict.idle .lamp{background:var(--muted)}
     .ops-rows{display:grid;gap:6px;font:400 10px var(--mono);color:var(--muted)}.ops-rows div{display:flex;justify-content:space-between;gap:10px}.ops-rows b{color:var(--ink);font-weight:700}
     .ops-failures{margin-top:10px;font:400 9px/1.6 var(--mono);color:#8a4b4b}
+    .withheld{margin-top:14px;border:1px dashed var(--line);padding:13px 15px;background:#faf9f5}.withheld h4{font:700 9px var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 8px}.withheld div{font:400 11px/1.6 var(--mono);color:var(--muted)}.withheld b{color:var(--ink)}
     .receipt{border-left:5px solid var(--lime)}.receipt-body{font:400 12px/1.9 var(--mono);color:var(--muted);margin:18px 0}
     .architecture{background:var(--ink);color:var(--white)}.architecture .eyebrow{color:var(--lime)}.architecture .section-head p{color:#a8b6b0}.flow{display:grid;grid-template-columns:1fr 76px 1fr 76px 1fr;align-items:stretch}.flow-arrow{display:grid;place-items:center;color:var(--lime);font:700 25px var(--mono)}.flow-card{border:1px solid #34443d;padding:26px;background:var(--ink-2)}.flow-card .num{color:var(--lime);font:700 11px var(--mono)}.flow-card h3{font:700 20px var(--display);margin:24px 0 10px}.flow-card p{color:#a8b6b0;font-size:13px;margin:0}.flow-card code{display:block;border-top:1px solid #34443d;margin-top:20px;padding-top:14px;color:var(--mint);font:400 10px/1.65 var(--mono)}
     .principles{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--ink);border:1px solid var(--ink)}.principle{background:var(--card);padding:30px}.principle svg{width:27px;height:27px;margin-bottom:35px}.principle h3{font:800 20px var(--display);letter-spacing:-.03em}.principle p{font-size:13px;color:var(--muted);margin:0}
@@ -155,6 +156,7 @@
           <div class="workspace">
             <div id="banner" class="banner"></div>
             <section id="gallery">
+              <div id="withheld" class="withheld hidden"></div>
               <div class="workspace-heading"><h3>Available now</h3><span>PRIVATE INSTANCE · 30 MINUTES</span></div>
               <div id="apps" class="catalog-grid"></div>
             </section>
@@ -277,7 +279,19 @@
     }
 
     async function loadCatalog() {
-      const { apps } = await api('/api/catalog');
+      const { apps, withheld } = await api('/api/catalog');
+
+      // Show what is NOT offered, and why. An app vanishing without
+      // explanation looks like a bug; an app withheld with a stated reason
+      // explains the security model instead.
+      const withheldBox = $('withheld');
+      if (withheld?.length) {
+        withheldBox.classList.remove('hidden');
+        withheldBox.innerHTML = '<h4>Withheld by policy</h4>' + withheld
+          .map(w => `<div><b>${esc(w.name)}</b> — ${esc(w.explanation)}</div>`).join('');
+      } else {
+        withheldBox.classList.add('hidden');
+      }
       $('apps').innerHTML = '';
       apps.forEach(app => {
         const card = document.createElement('article');

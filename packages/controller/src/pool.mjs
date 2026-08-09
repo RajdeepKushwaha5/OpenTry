@@ -20,6 +20,7 @@
 import { LIMITS } from '../../shared/src/limits.mjs';
 import { generateTrialId } from '../../shared/src/manifest.mjs';
 import { provisionTrial } from '../../provisioner/src/lifecycle.mjs';
+import { appPolicy } from '../../shared/src/policy.mjs';
 
 export class WarmPool {
   /**
@@ -51,7 +52,8 @@ export class WarmPool {
 
     for (const [slug, manifest] of this.catalog) {
       if (budget <= 0) break;
-      if (manifest.app.hidden) continue;
+      // Do not spend money warming something we will refuse to hand out.
+      if (!appPolicy(manifest).offered) continue;
       if (this.inFlight.has(slug)) continue;
 
       const { ready, provisioning } = await this.store.poolDepth(slug);
@@ -117,7 +119,8 @@ export class WarmPool {
    */
   async claim({ appSlug, visitorHash }) {
     const manifest = this.catalog.get(appSlug);
-    if (!manifest) return { lease: null, reason: 'unknown-app' };
+    const policy = appPolicy(manifest);
+    if (!policy.offered) return { lease: null, reason: policy.reason };
 
     // One trial per visitor: free anonymous infrastructure needs a limit that
     // does not depend on the honesty of the person clicking.

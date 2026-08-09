@@ -72,3 +72,17 @@ CREATE TABLE IF NOT EXISTS lease_events (
 );
 
 CREATE INDEX IF NOT EXISTS lease_events_lease ON lease_events (lease_id, id);
+
+-- Rate limiting, in the database rather than in memory.
+--
+-- An in-process counter pins the API to a single container: scale to two and
+-- each one enforces its own limit, doubling the real ceiling. Postgres is
+-- already here, the write volume is trivial, and it makes the API genuinely
+-- horizontally scalable.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  bucket      TEXT PRIMARY KEY,          -- visitor fingerprint + window
+  hits        INTEGER NOT NULL DEFAULT 1,
+  window_start TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS rate_limits_sweep ON rate_limits (window_start);

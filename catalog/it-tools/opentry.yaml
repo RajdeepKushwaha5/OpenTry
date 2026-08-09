@@ -1,0 +1,55 @@
+# IT-Tools — a single static container of developer utilities.
+#
+# Standard risk: everything runs client-side or transforms input locally. There
+# is no outbound-request feature and no code execution, so it is offered even
+# on deployments that withhold elevated-tier apps.
+#
+# Small image (~90 MB), which matters: image size is the dominant driver of
+# provisioning time on a Docker VM, and Stirling PDF (~2.5 GB) blew past the
+# 12-minute ceiling entirely.
+version: 1
+app:
+  slug: it-tools
+  name: IT-Tools
+  tagline: Eighty developer utilities in one page
+  description: >
+    Token generators, hash and HMAC, JWT decoding, cron parsing, base64,
+    regex testing, colour conversion, and dozens more — the tools you would
+    otherwise paste sensitive values into a random website to use.
+  homepage: https://it-tools.tech
+  repo: https://github.com/CorentinTh/it-tools
+  license: GPL-3.0
+  category: utilities
+  accent: "#0e7490"
+  capabilities:
+    outboundHttp: false
+    codeExecution: false
+  firstSteps:
+    - Pick any tool from the sidebar — nothing needs configuring
+    - Try "Token generator" or "JWT parser"; everything runs in your own container
+trial:
+  ttlMinutes: 30
+  entry: { service: app, port: 8080 }
+infra:
+  services:
+    - hostname: app
+      type: docker@26.1
+      priority: 1
+      enableSubdomainAccess: true
+      verticalAutoscaling: { cpu: 1, ram: 1, disk: 5 }
+      buildFromGit: https://github.com/zeropsio/recipe-docker
+      zeropsSetup: app
+      zeropsYaml:
+        zerops:
+          - setup: app
+            run:
+              base: docker@26.1
+              prepareCommands:
+                - docker image pull corentinth/it-tools:2024.10.22-7ca5933
+              ports:
+                - port: 8080
+                  httpSupport: true
+              start: docker run --network=host -e NGINX_PORT=8080 corentinth/it-tools:2024.10.22-7ca5933
+verify:
+  - { name: Application responding, kind: http, path: /, timeoutMs: 240000 }
+  - { name: Tool list renders, kind: http, path: /, expectBodyContains: "IT-Tools", timeoutMs: 60000 }

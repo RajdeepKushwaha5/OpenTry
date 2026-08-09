@@ -1,0 +1,71 @@
+# Vikunja — self-hosted task and project management.
+#
+# Standard risk: a task tracker with no outbound-request feature. Uses a real
+# managed Postgres, so it also demonstrates the two-service shape on the
+# standard tier rather than only on elevated apps.
+version: 1
+app:
+  slug: vikunja
+  name: Vikunja
+  tagline: The to-do app that respects your data
+  description: >
+    Lists, Kanban boards, Gantt charts, labels, reminders and teams — a
+    self-hosted alternative to Todoist and Trello, with a real database
+    behind it rather than someone else's cloud.
+  homepage: https://vikunja.io
+  repo: https://code.vikunja.io/vikunja
+  license: AGPL-3.0
+  category: productivity
+  accent: "#1973ff"
+  capabilities:
+    outboundHttp: false
+    codeExecution: false
+  firstSteps:
+    - Register any username and password — the trial is yours alone
+    - Create a project, then switch it to the Kanban view
+    - Everything is stored in the trial's own Postgres and deleted with it
+trial:
+  ttlMinutes: 30
+  entry: { service: app, port: 3456 }
+infra:
+  services:
+    - hostname: db
+      type: postgresql@16
+      mode: NON_HA
+      priority: 10
+      verticalAutoscaling: { minCpu: 1, maxCpu: 2, minRam: 0.25, maxRam: 1, minDisk: 1, maxDisk: 5 }
+    - hostname: app
+      type: docker@26.1
+      priority: 1
+      enableSubdomainAccess: true
+      verticalAutoscaling: { cpu: 2, ram: 2, disk: 5 }
+      buildFromGit: https://github.com/zeropsio/recipe-docker
+      zeropsSetup: app
+      zeropsYaml:
+        zerops:
+          - setup: app
+            run:
+              base: docker@26.1
+              prepareCommands:
+                - docker image pull vikunja/vikunja:0.24.4
+              ports:
+                - port: 3456
+                  httpSupport: true
+              start: >
+                docker run --network=host
+                -e VIKUNJA_DATABASE_TYPE -e VIKUNJA_DATABASE_HOST
+                -e VIKUNJA_DATABASE_DATABASE -e VIKUNJA_DATABASE_USER
+                -e VIKUNJA_DATABASE_PASSWORD -e VIKUNJA_SERVICE_JWTSECRET
+                -e VIKUNJA_SERVICE_INTERFACE=:3456
+                vikunja/vikunja:0.24.4
+      envSecrets:
+        VIKUNJA_DATABASE_TYPE: postgres
+        VIKUNJA_DATABASE_HOST: db
+        VIKUNJA_DATABASE_DATABASE: ${db_dbName}
+        VIKUNJA_DATABASE_USER: ${db_user}
+        VIKUNJA_DATABASE_PASSWORD: ${db_password}
+        VIKUNJA_SERVICE_JWTSECRET: <@generateRandomString(<32>)>
+verify:
+  - { name: Database reachable, kind: tcp, service: db, port: 5432 }
+  - { name: Application responding, kind: http, path: /api/v1/info, timeoutMs: 240000 }
+  - { name: Interface renders, kind: http, path: /, expectBodyContains: "Vikunja", timeoutMs: 60000 }

@@ -259,6 +259,49 @@ export class LeaseStore {
     ]);
   }
 
+  // -- rate limiting ---------------------------------------------------------
+
+  /**
+   * Count a hit and report whether the caller is over the limit.
+   *
+   * One atomic upsert: the INSERT wins if the window is new, and the DO UPDATE
+   * either increments within the window or resets it. Doing this as
+   * read-then-write would let two concurrent requests each see the same count
+   * and both pass — the exact failure a rate limiter exists to prevent.
+   */
+  async hitRateLimit(key, { windowMs, max }) {
+    const { rows } = await this.pool.query(
+      `INSERT INTO rate_limits (bucket, hits, window_start)
+       VALUES ($1, 1, now())
+       ON CONFLICT (bucket) DO UPDATE SET
+         hits = CASE
+           WHEN rate_limits.window_start < now() - ($2 || ' milliseconds')::interval
+           THEN 1 ELSE rate_limits.hits + 1 END,
+         window_start = CASE
+           WHEN rate_limits.window_start < now() - ($2 || ' milliseconds')::interval
+           THEN now() ELSE rate_limits.window_start END
+       RETURNING hits, window_start`,
+      [key, String(windowMs)],
+    );
+    const { hits, window_start } = rows[0];
+    return {
+      allowed: hits <= max,
+      hits,
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil((new Date(window_start).getTime() + windowMs - Date.now()) / 1000),
+      ),
+    };
+  }
+
+  /** Drop expired buckets so the table stays small. */
+  pruneRateLimits(windowMs) {
+    return this.pool.query(
+      `DELETE FROM rate_limits WHERE window_start < now() - ($1 || ' milliseconds')::interval`,
+      [String(windowMs * 2)],
+    );
+  }
+
   // -- events --------------------------------------------------------------
 
   appendEvent(leaseId, { step, status, message, atMs, ...meta }) {
