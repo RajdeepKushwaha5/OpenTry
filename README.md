@@ -1,236 +1,453 @@
 # OpenTry
 
-**Try any open-source app in seconds. Private, real, disposable — no signup, no Docker.**
+**Disposable, private evaluation environments for open-source software.**
 
-**Live: https://api-2d72-3000.prg1.zerops.app**
+OpenTry helps developers evaluate self-hosted applications without creating a cloud account, installing Docker, or sharing a polluted public demo. One click hands the visitor an isolated application, managed database, public URL, and temporary admin login; after 30 minutes, the entire Zerops project is destroyed.
+
+### [Launch OpenTry →](https://api-2d72-3000.prg1.zerops.app)
 
 Built for [The Zerops Challenge](https://www.wemakedevs.org/hackathons/zerops).
 
----
+> OpenTry is not a simulated sandbox. Every trial is a real, separately networked Zerops project. When a warm trial is available, handoff takes seconds; provisioning its replacement continues in the background.
 
-## The problem
+## Why OpenTry exists
 
-You find an open-source project you might want to use — Metabase, Umami, Vikunja, n8n. Your options today:
+Finding a promising open-source project is easy. Evaluating it is not.
 
-- a **shared public demo**, usually read-only or already trashed by other visitors
-- **`docker compose up`** — install Docker, read the docs, wait, debug why it failed
-- **deploy it to a server yourself** — an hour of your life
+A prospective user usually has three options:
 
-Most people close the tab. Maintainers lose evaluators at the top of the funnel and have no good fix, because a permanent demo costs money forever and gets abused.
+- use a shared demo that is read-only, preconfigured, or already modified by strangers;
+- install Docker, study the deployment guide, and debug the stack locally;
+- deploy the application and its dependencies to a cloud account before deciding whether it is useful.
 
-## What OpenTry does
+That setup cost causes potential users to leave before experiencing the product. Maintainers can run a permanent public demo, but then they pay continuously and must defend a shared instance from abuse.
 
-A visitor clicks **Try**. About a second later they have their **own private instance** of the app — real application, real managed database, real URL, real admin login — for 30 minutes. Then it destroys itself completely.
+OpenTry moves that work to disposable infrastructure. The visitor gets a private evaluation environment; the maintainer gets a demo that exists only while someone is using it.
 
-It isn't a sandbox or a recording. Each trial is a genuine, isolated Zerops project created from a manifest and torn down by a reaper.
+## Try the core workflow
 
-## This is not a deploy button
+1. Open the [live application](https://api-2d72-3000.prg1.zerops.app).
+2. Choose Umami, Metabase, Vikunja, or n8n.
+3. Open the assigned URL and use the generated login.
+4. Watch the lease countdown and live pool replacement.
+5. Destroy the environment early or let its 30-minute lease expire.
 
-| | Deploy buttons (Railway / Vercel / Zerops recipes) | OpenTry |
+The page exposes the real warm-pool state, provisioning timeline, health metrics, and estimated spend. If no warm instance is available, it says so and shows the replacement being built rather than hiding the wait behind an indefinite spinner.
+
+## This is not another deploy button
+
+| | Traditional deploy button | OpenTry |
 |---|---|---|
-| Account needed | Yes | **No** |
-| Who pays | You | The OpenTry operator — a fraction of a cent per trial |
-| Where it goes | Permanently into your account | A throwaway project |
-| Cleanup | You remember | Automatic |
-| Serves | People who already decided | **People still deciding** |
+| Intended user | Someone ready to deploy | Someone still evaluating |
+| Cloud account required | Yes | No |
+| Environment owner | User | OpenTry operator |
+| Lifetime | Permanent until removed | 30-minute lease |
+| Cleanup | Manual | Automatic and tag-guarded |
+| Demo state | Often shared | Isolated per visitor |
+| Cost model | Runs continuously | Operator pays only for temporary usage |
 
----
+## Why Zerops is essential
 
-## How Zerops is used
+OpenTry does not merely happen to be hosted on Zerops. Zerops' programmable project lifecycle is the product primitive.
 
-OpenTry is not an app that merely *runs on* Zerops. Zerops' project API **is** the product.
+- **A whole project per visitor.** The controller renders Import YAML and calls the Zerops project API. Each trial receives its own application service, managed dependencies, private network, L7 routing, TLS endpoint, and generated credentials.
+- **Infrastructure described in one document.** A catalog manifest becomes a complete project containing Docker or native runtimes, PostgreSQL, caches, search engines, messaging, or object storage.
+- **Per-minute billing.** Temporary infrastructure is economically viable because services are billed for the time they exist. A representative two-service trial is estimated at roughly `$0.0086` for 30 minutes at published list prices; the same maximum allocation is about `$12.40` for 30 days.
+- **Managed services without plumbing.** Applications connect to databases through Zerops-generated environment references such as `${db_connectionString}`.
+- **Real deployment verification.** OpenTry waits for platform state, enables the public subdomain, checks actual HTTP behavior, seeds the application, and only then releases it.
+- **One API for creation and cleanup.** The same control plane imports a project, observes it, and deletes it after the lease.
 
-**Trials are real Zerops projects.** Every trial is created with `POST /client/{id}/project/import` from a rendered Import YAML, and destroyed with `DELETE /project/{id}`. Full private network, dedicated L3 firewall, L7 balancer, SSL, managed Postgres — per visitor.
+The platform-specific behavior learned while building this is documented in [FINDINGS.md](FINDINGS.md).
 
-**Per-minute billing makes it viable.** A 30-minute n8n trial costs roughly **$0.0086**. The same stack left running for 30 days would be **$12.40**. Disposable infrastructure is only sane on a platform that bills by the minute and gives you a free Lightweight core per project.
+## Catalog
 
-**Two-project isolation.** Trials are untrusted and reachable by anonymous visitors, so they never share a network with the control plane:
+The current catalog demonstrates the same product with four different applications:
 
+| Application | Trial infrastructure | Prepared experience | Risk tier |
+|---|---|---|---|
+| **Umami** | Docker + managed PostgreSQL | Signed in with a demo website registered | Standard |
+| **Metabase** | Docker + managed PostgreSQL | Signed in with the Sample Database available | Elevated |
+| **Vikunja** | Docker + managed PostgreSQL | Signed in with a project and task on the board | Standard |
+| **n8n** | Docker + managed PostgreSQL | Signed in as the temporary owner | Elevated |
+
+Provisioning time varies with Docker VM boot, image pulls, placement, and cache state. Observed runs have ranged from several minutes to roughly twelve minutes. The warm pool pays that latency before the visitor arrives, so a ready instance can be claimed in seconds.
+
+Elevated applications can make arbitrary outbound requests or execute workflows. They are withheld by default in code and require an explicit operator opt-in.
+
+## Evidence that it works
+
+OpenTry has no probabilistic model to evaluate against a labeled dataset. Its equivalent evidence is deterministic safety testing, schema validation, real-infrastructure acceptance runs, and production lifecycle metrics.
+
+### Automated tests
+
+The portable suite uses Node's built-in test runner:
+
+```bash
+npm test
 ```
-control plane (long-lived)          each trial (disposable, tagged)
-┌────────────────────────┐          ┌──────────────────────────┐
-│ api        (public)    │          │ app  (public subdomain)  │
-│ controller (private)   │ ───────▶ │ db   (private)           │
-│ db         (private)   │  creates └──────────────────────────┘
-└────────────────────────┘           destroyed on TTL by the reaper
+
+It covers:
+
+- manifest parsing, service-family rules, TTL and resource ceilings;
+- hostile manifest paths, forbidden environment keys, and Docker port collisions;
+- proof-of-work signatures, expiry, replay, difficulty, and wrong-app reuse;
+- fixed and autoscaled resource cost calculations;
+- seed interpolation, capture behavior, optional and required failures;
+- application policy and emergency kill-switch behavior;
+- alert transitions and recovery behavior.
+
+The atomic claim behavior needs a real PostgreSQL database because `FOR UPDATE SKIP LOCKED` and partial unique indexes cannot be faithfully tested with an in-memory substitute:
+
+```bash
+DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/opentry_test npm run test:db
 ```
 
-**Behaviour verification, not just deployment.** A trial is only handed over once real checks pass against the live URL — including one that fetches the page and asserts the content is actually there. A green deploy is not proof that anything works.
+Without `DATABASE_URL`, that suite prints an explicit skip warning. A verified PostgreSQL 16 run sent twenty simultaneous claims to five warm leases: exactly five distinct leases were returned, while one visitor racing eight requests received exactly one lease.
 
-**Managed service breadth.** A catalog entry declares whatever it needs — Postgres, Valkey, ClickHouse, Meilisearch, object storage — as one line each.
+### Catalog validation
 
----
+Every catalog entry is rendered and checked against Zerops' published Import YAML JSON Schema:
+
+```bash
+npm run catalog:check
+npm run catalog:check -- --show n8n
+```
+
+The second command prints the exact post-clamping YAML that Zerops would receive. Service-type differences between the public schema and the live API are surfaced as warnings instead of silently ignored; the working forms are recorded in [FINDINGS.md](FINDINGS.md).
+
+### End-to-end go/no-go
+
+The go/no-go test spends real Zerops credit. It imports a trial project, waits for its services, enables its route, verifies application behavior, tests the deletion guard, and removes the project:
+
+```bash
+npm run gonogo -- --app hello
+npm run gonogo -- --app umami
+```
+
+Use `npm run gonogo:keep -- --app <slug>` to inspect the resulting project manually, then `npm run gonogo:cleanup` to remove tagged strays.
+
+### Monitoring
+
+OpenTry derives operational metrics from its PostgreSQL lease history instead of adding a separate observability service:
+
+- provisioning attempts, successes, failures, and claim count;
+- p50, p95, and slowest provisioning time by application;
+- current state and global capacity usage;
+- estimated destroyed and still-open infrastructure cost;
+- recent failure reasons.
+
+Useful endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| [`/health`](https://api-2d72-3000.prg1.zerops.app/health) | Process liveness |
+| [`/api/health/deep`](https://api-2d72-3000.prg1.zerops.app/api/health/deep) | Provisioning-aware health; returns `503` when unhealthy |
+| [`/api/metrics`](https://api-2d72-3000.prg1.zerops.app/api/metrics) | Operational snapshot and estimated spend |
+| [`/api/pool`](https://api-2d72-3000.prg1.zerops.app/api/pool) | Warm and provisioning capacity by app |
+
+The controller can also send edge-triggered webhook alerts when health degrades and when it recovers.
 
 ## Architecture
 
-### Control plane — 3 services
+OpenTry uses two isolation layers: one long-lived control-plane project and one disposable project per trial.
 
-| Service | Public | Holds Zerops token | Can create/destroy infra |
-|---|---|---|---|
-| `api` (Node.js) | Yes | **No** | **No** |
-| `controller` (Node.js) | No — declares no ports | Yes | Yes |
-| `db` (PostgreSQL) | No | — | — |
+```mermaid
+flowchart LR
+    V[Anonymous visitor] -->|HTTPS| API[Public API + web]
+    API -->|leases, claims, metrics| DB[(Control PostgreSQL)]
+    C[Private controller] -->|pool + reaper state| DB
+    C -->|Bearer token / Zerops REST API| Z[Zerops control plane]
+    Z --> T1[Disposable trial project]
+    T1 --> APP[Application service]
+    T1 --> TDB[(Managed database)]
+    V -->|temporary URL + login| APP
+    C -. verify and seed over public URL .-> APP
+    C -->|tag-guarded delete on expiry| Z
+```
 
-**This split is the core security decision.** The process that serves HTTP has no credentials, so a bug in request handling cannot provision or delete anything. Destroying a trial only flags a lease row; the reaper performs the deletion. There is exactly one code path that can delete infrastructure, and it is tag-guarded.
+### Control plane
 
-### The warm pool
+| Service | Public | Zerops token | Responsibility |
+|---|---:|---:|---|
+| `api` | Yes | No | UI, catalog, atomic claims, recovery, SSE, metrics |
+| `controller` | No ports | Yes | Warm pool, provisioning, verification, reaping, alerts |
+| `db` | No | No | Durable leases, timelines, rate-limit buckets, audit history |
 
-Provisioning measured **326s** for n8n, handed to a visitor in **2.0s**. Nobody waits six minutes to look at software — that delay is precisely why people don't evaluate self-hosted apps, which is the problem OpenTry exists to solve. So finished trials idle in a pool and are handed over instantly, with a replacement provisioned in the background.
+The public request handler never receives the Zerops token. A visitor asking to destroy a trial only expires an owned lease in PostgreSQL; the private reaper performs the actual project deletion after checking its ownership tag.
 
-The claim is one atomic statement using `FOR UPDATE SKIP LOCKED`. Two visitors clicking at the same moment get different trials; a SELECT-then-UPDATE would be a race that only appears under exactly the load a demo creates.
+### Lease lifecycle
 
-### Safety
+```mermaid
+stateDiagram-v2
+    [*] --> PROVISIONING: pool needs capacity
+    PROVISIONING --> READY_UNCLAIMED: services + URL + checks + seed pass
+    PROVISIONING --> FAILED: import or verification fails
+    READY_UNCLAIMED --> CLAIMED: atomic visitor claim
+    READY_UNCLAIMED --> DESTROYING: warm project becomes stale
+    CLAIMED --> DESTROYING: TTL or early destroy
+    FAILED --> DESTROYING: cleanup
+    DESTROYING --> DESTROYED: tagged Zerops project removed
+```
 
-Free, anonymous, disposable infrastructure needs limits that don't depend on goodwill:
+Claims use one PostgreSQL statement with `FOR UPDATE SKIP LOCKED`. Concurrent visitors lock different warm rows, while a partial unique index prevents one visitor from owning multiple active leases.
 
-- **Tag-guarded deletion.** `deleteProject` re-fetches the project and refuses unless it carries `OPENTRY_EPHEMERAL`. No delete-by-name, no delete-by-pattern, no bypass flag. The go/no-go asserts the guard rejects a wrong tag on every run.
-- **Orphan reaping.** Projects tagged as ours with no lease row (a controller crash between import and DB write) are destroyed after a 15-minute grace period. Without this they'd bill forever, invisibly.
-- **Manifests are untrusted.** Catalog entries come from third parties. Every resource request is clamped *downward* — never up. A manifest cannot widen its own ceiling.
-- **No mail relay.** SMTP-shaped env keys are rejected at the manifest layer; outbound spam is the dominant abuse vector for free infrastructure.
-- **Hard ceilings.** One trial per visitor, 30-minute TTL, global concurrency cap.
-- **No raw IPs stored.** Visitors are identified by a salted SHA-256 of IP + user-agent — enough to answer "does this person already have a trial", and nothing else.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the detailed reasoning and failure model.
 
----
+## Safety model
 
-## The catalog
+Anonymous infrastructure cannot be made safe with one control, so OpenTry layers several:
 
-Four apps, each verified end to end against real infrastructure:
+- **Separate projects:** untrusted trial software never shares the control plane's private network.
+- **Credential boundary:** only the private controller holds the Zerops token.
+- **Tag-guarded deletion:** the client re-fetches a project and refuses deletion unless it carries `OPENTRY_EPHEMERAL`.
+- **Hard lifetime:** claimed trials expire after 30 minutes; unused warm projects rotate.
+- **Global ceiling:** the controller stops creating projects at the configured account-wide limit.
+- **One active lease per fingerprint:** enforced by PostgreSQL, not only application code.
+- **Proof of work:** signed, short-lived Hashcash-style challenges raise the cost of automated claims.
+- **Manifest ceilings:** service count, CPU, RAM, disk, object storage, containers, HA mode, TTL, ports, and environment keys are constrained before import.
+- **Policy tiers:** applications capable of outbound requests or code execution are disabled unless the operator opts in.
+- **Kill switch:** `OPENTRY_DISABLED_APPS` withdraws catalog entries without a code deployment.
+- **Orphan reaping:** tagged projects not represented by a live lease are removed after a grace period.
 
-| App | Provision time | Risk tier | Seeding lands you on |
-|---|---|---|---|
-| **Umami** | 264s | standard | signed in, a demo site registered |
-| **Metabase** | 264s | elevated | signed in, Sample Database ready |
-| **Vikunja** | 303s | standard | signed in, a project with a task on the board |
-| **n8n** | 310s | elevated | signed in as the owner |
+No raw IP address is stored. The API keeps only a deployment-salted hash of network and user-agent information. This is a soft anonymous-abuse control, not proof of identity; the global project ceiling remains the financial safety boundary.
 
-Elevated-tier apps can make outbound network requests, so they are withheld
-unless the operator opts in — see [ARCHITECTURE.md](ARCHITECTURE.md#safety).
+## Quickstart
 
-One file per app. Maintainers add **nothing** to their own repository — the manifest supplies the build config via Zerops' `zeropsYaml`.
+### Prerequisites
+
+- Node.js 20 or newer
+- npm
+- PostgreSQL for the API/controller and database-backed concurrency tests
+- a Zerops account and Personal Access Token for real provisioning
+- a public Git repository when deploying through `buildFromGit`
+
+### Install and validate
+
+```bash
+git clone https://github.com/RajdeepKushwaha5/OpenTry.git
+cd OpenTry
+npm install
+cp .env.local.example .env.local
+npm test
+npm run catalog:check
+```
+
+On Windows PowerShell, use `Copy-Item .env.local.example .env.local` instead of `cp`.
+
+Add your Personal Access Token to `.env.local` only if you intend to provision real projects:
+
+```dotenv
+ZEROPS_TOKEN=
+DATABASE_URL=postgresql://user:password@127.0.0.1:5432/opentry
+```
+
+`.env.local` is ignored by Git. The token grants project-level creation and deletion authority; use a dedicated Zerops account for public deployments when possible.
+
+## Local development
+
+Start PostgreSQL first, then run the public API and private controller in separate terminals:
+
+```bash
+# Optional local PostgreSQL with Docker; any PostgreSQL 16 instance also works
+docker run -d --name opentry-pg -p 55432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=opentry postgres:16-alpine
+
+# Put this value in .env.local
+DATABASE_URL=postgresql://postgres:password@127.0.0.1:55432/opentry
+```
+
+The application creates its lease tables and indexes automatically on startup.
+
+```bash
+npm run dev:api
+npm run dev:controller
+```
+
+The API is available at `http://localhost:3000`. The controller talks to the real Zerops API and can spend credit. For frontend or read-only API work, run only `npm run dev:api`; pool provisioning will remain inactive.
+
+### Common problems
+
+| Symptom | Likely cause |
+|---|---|
+| API exits during startup | PostgreSQL is unavailable or `DATABASE_URL` is wrong |
+| Controller exits with “No Zerops token” | `ZEROPS_TOKEN`/`OPENTRY_ZEROPS_TOKEN` is missing |
+| Runtime remains `READY_TO_DEPLOY` | `zeropsSetup` does not match, or no deployment was triggered |
+| Docker service is active but URL does not answer | Image listen port differs, or it binds host port 80/443 |
+| Public access initially returns an HTTP-port error | Zerops route registration is still converging; OpenTry retries it |
+| Deployed code looks stale | Zerops built the Git remote, not uncommitted local changes |
+| Concurrency suite is skipped | Provide a real PostgreSQL `DATABASE_URL` |
+
+The platform-specific versions of these problems, their reproductions, and the working solutions are in [FINDINGS.md](FINDINGS.md).
+
+## Configuration
+
+### Required
+
+| Variable | Scope | Description |
+|---|---|---|
+| `DATABASE_URL` | API + controller | PostgreSQL connection string; Zerops supplies `${db_connectionString}` |
+| `OPENTRY_ZEROPS_TOKEN` | Controller | Personal token used to create and delete trial projects |
+| `OPENTRY_VISITOR_SALT` | Project | Shared salt for anonymous fingerprints and proof-of-work signing fallback |
+
+Locally, `ZEROPS_TOKEN` is accepted as an alternative to `OPENTRY_ZEROPS_TOKEN`.
+
+### Operational controls
+
+| Variable | Default | Description |
+|---|---:|---|
+| `OPENTRY_WARM_PER_APP` | `1` | Finished leases kept ready per offered application |
+| `OPENTRY_MAX_CONCURRENT_TRIALS` | `6` | Account-wide live-project ceiling |
+| `OPENTRY_RECONCILE_MS` | `20000` | Warm-pool reconciliation interval |
+| `OPENTRY_ALLOW_ELEVATED` | off | Enables apps with outbound-request or code-execution capabilities |
+| `OPENTRY_DISABLED_APPS` | empty | Comma-separated emergency catalog kill switch |
+| `OPENTRY_POW_SECRET` | visitor salt | Dedicated proof-of-work signing secret |
+| `OPENTRY_RATE_MAX` | `30/min` | Write/expensive-request limit per fingerprint |
+| `OPENTRY_RATE_POLL_MAX` | `240/min` | Read-only polling allowance per fingerprint |
+| `OPENTRY_MAX_STREAMS_PER_VISITOR` | `4` | Concurrent SSE streams per fingerprint |
+| `OPENTRY_MAX_STREAMS_TOTAL` | `40` | API-process-wide SSE ceiling |
+| `OPENTRY_TRUSTED_PROXY_HOPS` | `1` | Trusted reverse-proxy hops in `X-Forwarded-For` |
+| `OPENTRY_ALERT_WEBHOOK` | unset | Optional degradation/recovery webhook |
+| `OPENTRY_ALERT_INTERVAL_MS` | `120000` | Health-alert evaluation interval |
+
+Published price overrides are available as `PRICE_SHARED_CPU_CORE_30D`, `PRICE_DEDICATED_CPU_CORE_30D`, `PRICE_RAM_PER_GB_30D`, and `PRICE_DISK_PER_GB_30D`. All displayed costs remain estimates, not invoice data.
+
+## Deployment
+
+The recommended deployment uses [zerops-import.yaml](zerops-import.yaml) to create the long-lived control plane and [zerops.yaml](zerops.yaml) to build and run its API and controller setups.
+
+```bash
+npm install
+npm run deploy:dry
+npm run deploy
+```
+
+The deployment helper:
+
+1. checks that the working tree is committed and pushed;
+2. injects the Personal Access Token into the manifest in memory;
+3. imports the control-plane project;
+4. waits for PostgreSQL, the controller, and the API;
+5. enables the API subdomain and verifies `/health`;
+6. prints the public URL while the controller begins warming trials.
+
+OpenTry currently has no GitHub Actions workflow. Deployment is manual through `npm run deploy` or Zerops' own pipeline controls; tests do not automatically gate pushes. This is deliberate documentation of the current state, not a claim of CI/CD that the repository does not contain.
+
+See [DEPLOY.md](DEPLOY.md) for token scope, repository visibility, staging names, safe redeployment, and public-operation guidance.
+
+## Adding an application
+
+Create `catalog/<slug>/opentry.yaml`. A manifest describes the product, temporary credentials, safety capabilities, services, behavior checks, and optional seed requests:
 
 ```yaml
 version: 1
+
 app:
-  slug: n8n
-  name: n8n
+  slug: example
+  name: Example
+  tagline: A concrete description of what the visitor can evaluate
+  capabilities:
+    outboundHttp: false
+    codeExecution: false
+
 trial:
   ttlMinutes: 30
-  entry: { service: app, port: 5678 }
+  entry: { service: app, port: 3000 }
+
 infra:
   services:
     - hostname: db
       type: postgresql@16
       mode: NON_HA
     - hostname: app
-      type: docker@26.1
-      # ...pull image, run with --network=host
+      type: nodejs@22
+
 verify:
-  - { name: Application responding, kind: http, path: /healthz }
-  - { name: Setup screen renders, kind: http, path: /, expectBodyContains: n8n }
+  - name: Application responds
+    kind: http
+    path: /health
 ```
 
-Validate every manifest offline against Zerops' own published JSON Schema:
+Then validate and perform a real disposable deployment:
 
 ```bash
-npm run catalog:check
+npm run catalog:check -- --show example
+npm run gonogo -- --app example
 ```
 
----
+Adding a manifest to the repository is a reviewed operation. The public validation endpoint renders and checks submitted YAML but cannot install it or spend infrastructure credit.
 
-## Running it
+## Project structure
 
-```bash
-npm install
-cp .env.local.example .env.local   # add a Zerops personal access token
-
-npm run catalog:check              # validate manifests offline
-npm run gonogo                     # provision a real trial, verify, destroy it
-npm run gonogo -- --app hello      # minimal stack, fastest baseline
-npm run gonogo:cleanup             # remove any strays
+```text
+catalog/                      one reviewed opentry.yaml per application
+fixtures/                     minimal real-infrastructure probes
+packages/
+  api/src/                    public HTTP API, SSE, badges, static UI
+  controller/src/             lease store, warm pool, reaper, metrics, alerts
+  provisioner/src/            Zerops client, lifecycle, seeding, cost model
+  shared/src/                 catalog, policy, manifest and schema validation
+  web/public/                 dependency-free HTML/CSS/JavaScript frontend
+scripts/
+  catalog-check.mjs           offline manifest and Import YAML validation
+  gonogo.mjs                  real create → verify → delete acceptance test
+  deploy.mjs                  initial control-plane deployment
+  redeploy.mjs                controlled rebuild of an existing deployment
+zerops-import.yaml            control-plane infrastructure definition
+zerops.yaml                   API and controller build/run definitions
+ARCHITECTURE.md               detailed boundaries, lifecycle and trade-offs
+FINDINGS.md                   observed Zerops API and platform behavior
+DEPLOY.md                     deployment and operations guide
 ```
 
-Deploy your own copy — one command, no `zcli`, no Docker, no CI:
+## Decisions and trade-offs
 
-```bash
-npm run deploy
-```
+### Warm capacity instead of making visitors wait
 
-See [DEPLOY.md](DEPLOY.md) for the full guide.
+Docker VM provisioning and image pulls take minutes. OpenTry keeps one completed trial per offered app and immediately replaces a claimed lease. The trade-off is idle cost; the benefit is that the user experiences the application before losing interest.
 
----
+### Separate projects instead of one multitenant project
 
-## Tests
+A single project would be cheaper and faster, but anonymous trial software would share a network and failure domain with the control plane. Project-per-trial isolation costs more and makes provisioning slower, but it gives the product its strongest security property.
 
-```bash
-npm test        # 79 tests, no dependencies beyond Node
-npm run test:db # concurrency tests — needs a real Postgres
-```
+### PostgreSQL coordination instead of in-memory state
 
-The suite covers the parts whose correctness matters and cannot be established
-by reading them:
+Lease ownership, rate limiting, timelines, recovery, and cleanup state survive process restarts. PostgreSQL also provides the locking semantics needed for safe concurrent claims. The downside is that even the frontend/API development path needs a database.
 
-- **Resource clamping** — that a manifest cannot widen its own ceiling is a
-  security property, so it is asserted rather than assumed. Includes the three
-  per-family field rules that Zerops accepts at import and then fails silently.
-- **Proof of work** — every case is an attack: replay, wrong-app reuse,
-  insufficient work, a forged signature lowering its own difficulty, expiry,
-  and malformed input.
-- **Cost model** — that the shared/dedicated ratio is 10x, that 30 days of
-  usage equals the published monthly rate, and that every service family is
-  priced from its largest declared value, so the figure on screen never
-  under-reports. Docker services declare fixed `cpu`/`ram`/`disk` rather than
-  ranges, and reading only the ranges priced them at a fallback — which
-  understated every catalog app by about half until it was tested.
-- **Claim race** — `FOR UPDATE SKIP LOCKED` plus a partial unique index are
-  claims about Postgres under simultaneous writes, and the failure mode (two
-  visitors handed the same trial) only appears under exactly the load a demo
-  produces. These need a real database; in-memory substitutes do not emulate
-  either faithfully, and a test passing against a fake would be worse than no
-  test. **They are skipped loudly when `DATABASE_URL` is absent**, because a
-  silently skipped safety test reads as a passing one.
+### SSE instead of WebSockets
 
-  **Verified against PostgreSQL 16:** twenty simultaneous claims against five
-  warm trials hand out exactly five, all distinct, with fifteen clean misses.
-  One visitor racing themselves eight ways ends with exactly one trial.
+Provisioning progress is one-way and finite. SSE reconnects automatically, works through the Zerops L7 route, and needs no additional broker. Per-visitor and global stream ceilings protect the database polling loop.
 
-  ```bash
-  docker run -d --name opentry-pg -p 55432:5432     -e POSTGRES_PASSWORD=pw -e POSTGRES_DB=opentry_test postgres:16-alpine
-  DATABASE_URL=postgresql://postgres:pw@127.0.0.1:55432/opentry_test npm run test:db
-  ```
+### Reviewed catalog instead of public installation
 
----
+Anyone may validate a manifest, but only reviewed files in `catalog/` are provisioned. Automatic installation would let anonymous users choose what infrastructure the operator pays for and what code runs with outbound network access.
 
-## Platform notes discovered while building
+### Estimated cost instead of pretending it is billing data
 
-Seventeen behaviours found working against the live API, none of them documented.
-Nine share one shape: **the API accepts the input, returns 2xx, and the failure
-surfaces minutes later as a service that is stuck, silent or unreachable.**
+Zerops does not expose per-project invoice totals through the API used here. OpenTry calculates an upper-bound estimate from the manifest's declared resources and published prices, labels it as estimated, and keeps the pricing variables configurable.
 
-The full write-up — with reproductions, the fix that worked, and suggestions —
-is in **[FINDINGS.md](FINDINGS.md)**. Architecture and the reasoning behind it
-is in **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+## Known limitations
 
-A summary:
+- Zerops provides inbound firewalling but no per-trial egress filter. Elevated applications are therefore an explicit, higher-risk operator choice.
+- Anonymous visitor fingerprints discourage casual duplication but are not authentication. A determined user can change request characteristics or use another network; proof-of-work and the global ceiling bound the financial impact.
+- Warm trials spend a small amount while idle, and an empty pool exposes the underlying provisioning wait.
+- Docker services run in VMs, so their boot and image-pull times vary substantially.
+- `buildFromGit` requires a publicly reachable repository in the verified deployment path.
+- The published Import YAML schema and the live API disagree on some accepted service-type spellings. OpenTry reports these as warnings and records live-tested behavior.
+- The PostgreSQL concurrency suite is separate from the portable test command and cannot run without a real database.
+- There is no automated CI/CD workflow yet.
 
-| Finding | Detail |
-|---|---|
-| PAT auth endpoint | Personal access tokens authenticate at `/user/info`. `/auth/info` is session-only and returns 401 |
-| Collection shape | Every list response is `{ list, totalCount }` — not `items`, not a bare array |
-| Subdomain URL | Returned by **no** endpoint. Compose it: `{service}-{project.zeropsSubdomainHost}-{port}.{region}.zerops.app` |
-| Subdomain enabling | `enableSubdomainAccess` in Import YAML did not take effect; call `PUT /service-stack/{id}/enable-subdomain-access` explicitly |
-| HTTP port race | A service reports `ACTIVE` ~8s before its port registers; enabling the subdomain 400s with `serviceStackIsNotHttp` until then. Retry |
-| `READY_TO_DEPLOY` | Normal while a build runs — but also where a service sits forever if no build was triggered |
-| Per-family fields | Databases reject `minContainers` (use `mode`). Object storage rejects `verticalAutoscaling`. Docker VMs reject min/max ranges (use fixed `cpu`/`ram`/`disk`). All three are accepted at import and then fail silently |
-| Docker has no build phase | The base list shows `Build: -`. A `build:` section on a Docker service prevents it from ever starting |
-| Embedded `zeropsYaml` | `build.base` and `build.deployFiles` must be **arrays**, unlike a repo-level `zerops.yml` |
-| Case-insensitive env collision | `HOSTNAME` collides with the auto-generated `hostname` and fails the import with `userDataDuplicateKey`. Pass such values inline in the run command instead |
-| `--network=host` and port 80 | A Docker container binding 80 or 443 under host networking collides with the project's own L7 balancer. The service reports ACTIVE and the URL resolves, but nothing answers. Cost two catalog candidates (Excalidraw, IT-Tools) — both nginx images that ignore any port override. Now rejected at manifest parse time |
-| Env isolation | Services cannot see each other's variables by default; reference them explicitly (`${db_connectionString}`) |
-| Preprocessor scope | `<@generateRandomString>` is evaluated per occurrence — a value two services must share belongs at project scope |
-| Rebuild trigger | `trigger-pipeline` requires `buildFromGit` despite the schema marking it optional, and reports its absence as `serviceStackNotFound` — an error naming the one thing that is correct |
+## Further documentation
 
----
+- [Architecture and threat model](ARCHITECTURE.md)
+- [Deployment and operations](DEPLOY.md)
+- [Seventeen Zerops platform findings](FINDINGS.md)
+- [Zerops Import YAML reference](https://docs.zerops.io/references/import)
+- [Zerops REST API reference](https://docs.zerops.io/references/api)
+- [Zerops pricing](https://docs.zerops.io/company/pricing)
 
 ## AI use
 
-Claude was used for code generation, debugging and documentation. All architecture decisions, the security model, the two-project isolation design, and every platform finding above came from working against the live API and reading the results.
+Claude and OpenAI Codex were used for code generation, debugging, review, UI work, testing, and documentation. Architecture and security decisions were validated against the implementation, the official Zerops documentation, the published schema, and observed live-platform behavior. AI output was treated as a draft to verify, not as evidence by itself.
+
+---
+
+OpenTry turns “I might try this someday” into a working, private application now—and removes the infrastructure when the evaluation is over.
