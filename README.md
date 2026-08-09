@@ -199,7 +199,7 @@ by reading them:
 
 ## Platform notes discovered while building
 
-Sixteen behaviours found working against the live API, none of them documented.
+Seventeen behaviours found working against the live API, none of them documented.
 Nine share one shape: **the API accepts the input, returns 2xx, and the failure
 surfaces minutes later as a service that is stuck, silent or unreachable.**
 
@@ -224,6 +224,7 @@ A summary:
 | `--network=host` and port 80 | A Docker container binding 80 or 443 under host networking collides with the project's own L7 balancer. The service reports ACTIVE and the URL resolves, but nothing answers. Cost two catalog candidates (Excalidraw, IT-Tools) — both nginx images that ignore any port override. Now rejected at manifest parse time |
 | Env isolation | Services cannot see each other's variables by default; reference them explicitly (`${db_connectionString}`) |
 | Preprocessor scope | `<@generateRandomString>` is evaluated per occurrence — a value two services must share belongs at project scope |
+| Rebuild trigger | `trigger-pipeline` requires `buildFromGit` despite the schema marking it optional, and reports its absence as `serviceStackNotFound` — an error naming the one thing that is correct |
 
 ---
 

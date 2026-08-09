@@ -1,6 +1,6 @@
 # Field notes from building on Zerops
 
-Sixteen behaviours found while building [OpenTry](https://github.com/RajdeepKushwaha5/OpenTry),
+Seventeen behaviours found while building [OpenTry](https://github.com/RajdeepKushwaha5/OpenTry),
 which creates and destroys real Zerops projects on demand. None of them are in
 the documentation. Each one cost a debugging cycle, and most of them cost that
 cycle **because the platform accepted the input and then failed quietly** —
@@ -13,7 +13,7 @@ observed against the live API, and the fix that worked is included.
 
 ## The pattern worth fixing first
 
-Nine of these sixteen share one shape:
+Nine of these seventeen share one shape:
 
 > **The API accepts something invalid, returns 2xx, and the failure surfaces
 > minutes later as a service that is stuck, silent, or unreachable.**
@@ -228,6 +228,31 @@ Stirling PDF's image (~2.5 GB, bundling LibreOffice and OCR) exceeded a
 end-to-end including a managed Postgres.
 
 For anything provisioning on demand, image size is the number to optimise.
+
+### 17. A missing `buildFromGit` is reported as `serviceStackNotFound`
+
+`PUT /service-stack/{id}/trigger-pipeline` is how you rebuild an already
+deployed service. Called with an empty body against a service that plainly
+exists — same id `GET /project/{id}/service-stack` had just returned, status
+`ACTIVE` — it answers:
+
+```
+HTTP 400 {"error":{"code":"serviceStackNotFound","message":"Service stack not found."}}
+```
+
+The service stack is found. The missing field is `buildFromGit`, which is
+documented as optional and nullable in the OpenAPI schema:
+
+```json
+{ "buildFromGit": "https://github.com/owner/repo" }   // required in practice
+```
+
+We went looking for a deleted service, re-listed the project, and compared ids
+before thinking to vary the body. An error naming the wrong object is more
+expensive than a vague one, because it sends you somewhere specific.
+
+Two suggestions: report the missing field, and mark `buildFromGit` required for
+a service that has previously built from git.
 
 ---
 
