@@ -21,7 +21,9 @@
     "deploy": "node --env-file-if-exists=.env.local scripts/deploy.mjs",
     "deploy:dry": "node --env-file-if-exists=.env.local scripts/deploy.mjs --dry-run",
     "start:api": "node packages/api/src/server.mjs",
-    "start:controller": "node packages/controller/src/main.mjs"
+    "start:controller": "node packages/controller/src/main.mjs",
+    "test": "node --test \"packages/*/test/*.test.mjs\"",
+    "test:db": "node --test \"packages/controller/test/*.test.mjs\""
   },
   "dependencies": {
     "ajv": "^8.20.0",

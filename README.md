@@ -147,6 +147,35 @@ See [DEPLOY.md](DEPLOY.md) for the full guide.
 
 ---
 
+## Tests
+
+```bash
+npm test        # 36 tests, no dependencies beyond Node
+npm run test:db # concurrency tests — needs a real Postgres
+```
+
+The suite covers the parts whose correctness matters and cannot be established
+by reading them:
+
+- **Resource clamping** — that a manifest cannot widen its own ceiling is a
+  security property, so it is asserted rather than assumed. Includes the three
+  per-family field rules that Zerops accepts at import and then fails silently.
+- **Proof of work** — every case is an attack: replay, wrong-app reuse,
+  insufficient work, a forged signature lowering its own difficulty, expiry,
+  and malformed input.
+- **Cost model** — that the shared/dedicated ratio is 10x, that 30 days of
+  usage equals the published monthly rate, and that estimates come from the
+  ceiling so the figure on screen never under-reports.
+- **Claim race** — `FOR UPDATE SKIP LOCKED` plus a partial unique index are
+  claims about Postgres under simultaneous writes, and the failure mode (two
+  visitors handed the same trial) only appears under exactly the load a demo
+  produces. These need a real database; in-memory substitutes do not emulate
+  either faithfully, and a test passing against a fake would be worse than no
+  test. **They are skipped loudly when `DATABASE_URL` is absent**, because a
+  silently skipped safety test reads as a passing one.
+
+---
+
 ## Platform notes discovered while building
 
 Findings from working against the live API, each of which cost a debugging cycle. Kept here because they are not in the documentation.
