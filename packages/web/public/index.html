@@ -15,6 +15,9 @@
       --line:#cfd5ca; --muted:#5d6863; --lime:#b9f227; --lime-2:#d9ff79;
       --mint:#5ee6b2; --red:#df5f53; --amber:#d99b24; --white:#fff;
       --display:'Manrope',sans-serif; --sans:'DM Sans',sans-serif; --mono:'Space Mono',monospace;
+      /* Space Mono's @ reads as an 'a' at small sizes — postgresql@16 looked like
+         postgresql a16. Real code uses a stack with an unambiguous @. */
+      --code:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
       --shadow:0 24px 70px rgba(7,17,14,.12);
     }
     *{box-sizing:border-box} html{scroll-behavior:smooth} body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-x:hidden}
@@ -61,12 +64,12 @@
     .ops-failures{margin-top:10px;font:400 9px/1.6 var(--mono);color:#8a4b4b}
     .submit-panel{margin-top:16px;border:1px solid var(--line);background:var(--white);padding:15px}.submit-panel summary{font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.08em;cursor:pointer}.submit-panel p{font-size:12px;color:var(--muted);margin:12px 0;line-height:1.6}.submit-panel code{font:400 11px var(--mono);background:#f0f1ec;padding:1px 4px}
     #manifest-input{width:100%;min-height:150px;border:1px solid var(--line);padding:11px;font:400 11px/1.55 var(--mono);background:#fbfbf9;resize:vertical}
-    .validate-out{margin-top:12px;font:400 11px/1.7 var(--mono);padding:11px;border-left:3px solid var(--line);background:#f7f8f4}.validate-out.ok{border-left-color:#1f9d55}.validate-out.bad{border-left-color:#c0392b;color:#8a3b30}.validate-out pre{white-space:pre-wrap;word-break:break-word;margin:8px 0 0;font-size:10px;color:var(--muted);max-height:200px;overflow:auto}
+    .validate-out{margin-top:12px;font:400 11px/1.7 var(--mono);padding:11px;border-left:3px solid var(--line);background:#f7f8f4}.validate-out.ok{border-left-color:#1f9d55}.validate-out.bad{border-left-color:#c0392b;color:#8a3b30}.validate-out pre{white-space:pre-wrap;word-break:break-word;margin:8px 0 0;font:400 11px/1.6 var(--code);color:var(--muted);max-height:200px;overflow:auto}
     .withheld{margin-top:14px;border:1px dashed var(--line);padding:13px 15px;background:#faf9f5}.withheld h4{font:700 9px var(--mono);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0 0 8px}.withheld div{font:400 11px/1.6 var(--mono);color:var(--muted)}.withheld b{color:var(--ink)}
     .receipt{border-left:5px solid var(--lime)}.receipt-body{font:400 12px/1.9 var(--mono);color:var(--muted);margin:18px 0}
-    .architecture{background:var(--ink);color:var(--white)}.architecture .eyebrow{color:var(--lime)}.architecture .section-head p{color:#a8b6b0}.flow{display:grid;grid-template-columns:1fr 76px 1fr 76px 1fr;align-items:stretch}.flow-arrow{display:grid;place-items:center;color:var(--lime);font:700 25px var(--mono)}.flow-card{border:1px solid #34443d;padding:26px;background:var(--ink-2)}.flow-card .num{color:var(--lime);font:700 11px var(--mono)}.flow-card h3{font:700 20px var(--display);margin:24px 0 10px}.flow-card p{color:#a8b6b0;font-size:13px;margin:0}.flow-card code{display:block;border-top:1px solid #34443d;margin-top:20px;padding-top:14px;color:var(--mint);font:400 10px/1.65 var(--mono)}
+    .architecture{background:var(--ink);color:var(--white)}.architecture .eyebrow{color:var(--lime)}.architecture .section-head p{color:#a8b6b0}.flow{display:grid;grid-template-columns:1fr 76px 1fr 76px 1fr;align-items:stretch}.flow-arrow{display:grid;place-items:center;color:var(--lime);font:700 25px var(--mono)}.flow-card{border:1px solid #34443d;padding:26px;background:var(--ink-2)}.flow-card .num{color:var(--lime);font:700 11px var(--mono)}.flow-card h3{font:700 20px var(--display);margin:24px 0 10px}.flow-card p{color:#a8b6b0;font-size:13px;margin:0}.flow-card code{display:block;border-top:1px solid #34443d;margin-top:20px;padding-top:14px;color:var(--mint);font:400 11px/1.65 var(--code)}
     .principles{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--ink);border:1px solid var(--ink)}.principle{background:var(--card);padding:30px}.principle svg{width:27px;height:27px;margin-bottom:35px}.principle h3{font:800 20px var(--display);letter-spacing:-.03em}.principle p{font-size:13px;color:var(--muted);margin:0}
-    .manifest{display:grid;grid-template-columns:.8fr 1.2fr;gap:54px;align-items:center}.manifest h2{font:800 clamp(36px,5vw,58px)/1 var(--display);letter-spacing:-.055em;margin:18px 0}.manifest p{color:var(--muted)}.code-card{background:var(--ink);color:#d9e4df;padding:26px;box-shadow:10px 10px 0 var(--lime);overflow:auto}.code-top{display:flex;justify-content:space-between;color:#7f9089;font:700 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid #304039;padding-bottom:15px;margin-bottom:18px}.code-card pre{margin:0;font:400 11px/1.75 var(--mono);white-space:pre-wrap}.code-card .k{color:var(--lime)}.code-card .v{color:#8be2c0}
+    .manifest{display:grid;grid-template-columns:.8fr 1.2fr;gap:54px;align-items:center}.manifest h2{font:800 clamp(36px,5vw,58px)/1 var(--display);letter-spacing:-.055em;margin:18px 0}.manifest p{color:var(--muted)}.code-card{background:var(--ink);color:#d9e4df;padding:26px;box-shadow:10px 10px 0 var(--lime);overflow:auto}.code-top{display:flex;justify-content:space-between;color:#7f9089;font:700 9px var(--mono);letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid #304039;padding-bottom:15px;margin-bottom:18px}.code-card pre{margin:0;font:400 12px/1.75 var(--code);white-space:pre-wrap}.code-card .k{color:var(--lime)}.code-card .v{color:#8be2c0}
     footer{border-top:1px solid var(--ink);padding:40px 0}.footer-row{display:flex;justify-content:space-between;align-items:center;gap:24px}.footer-note{font:400 10px var(--mono);color:var(--muted)}.footer-links{display:flex;gap:22px;font:700 10px var(--mono);text-transform:uppercase}
     @media(max-width:900px){.hero{grid-template-columns:1fr;padding-top:64px}.portal-card{max-width:560px}.control-body{grid-template-columns:1fr}.telemetry{border-right:0;border-bottom:1px solid var(--line)}.flow{grid-template-columns:1fr}.flow-arrow{height:54px;transform:rotate(90deg)}.manifest{grid-template-columns:1fr}.strip-inner{grid-template-columns:repeat(2,1fr)}.strip-item:nth-child(2){border-right:0}}
     @media(max-width:640px){.shell{width:min(100% - 24px,1180px)}.navlinks a:not(.built){display:none}.built span{display:none}.hero{padding:50px 0}.hero h1{font-size:52px}.hero-actions{display:grid;grid-template-columns:1fr}.hero-actions .btn{width:100%}.hero-proof{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.proof-item{font-size:9px}.portal-card{width:calc(100% - 8px);min-height:390px;padding:22px;box-shadow:8px 8px 0 var(--lime)}.portal-head{gap:12px;flex-wrap:wrap}.terminal{font-size:9px}.terminal div{display:grid;grid-template-columns:18px minmax(0,1fr) 10px}.strip-inner,.principles,.catalog-grid{grid-template-columns:1fr}.strip-item{border-right:0;border-bottom:1px solid #31413a}.section{padding:74px 0}.section-head{display:block}.section-head p{margin-top:18px}.control{max-width:100%}.control-top{align-items:flex-start;flex-direction:column}.capacity{text-align:left}.telemetry,.workspace{min-width:0}.workspace{padding:16px}.workspace-heading{align-items:flex-start;flex-direction:column}.app-card{min-width:0}.ready-actions{width:100%}.ready-actions .btn{width:100%}.footer-row{align-items:flex-start;flex-direction:column}.nav{height:64px}}
@@ -108,7 +111,7 @@
         </div>
       </div>
       <div class="portal-card" aria-label="OpenTry provisioning preview">
-        <div class="portal-head"><span>Disposable project / 07</span><span class="live-dot">● verified live</span></div>
+        <div class="portal-head"><span>What a trial gives you</span><span>illustration</span></div>
         <div class="portal-visual"><span class="portal-arrow">→</span><div class="door"></div></div>
         <div class="terminal">
           <div><b>01</b><span>isolated Zerops project created</span><span class="ok">✓</span></div>
@@ -229,17 +232,19 @@
 
     <section class="section shell manifest">
       <div><div class="eyebrow">For maintainers</div><h2>One manifest opens the door.</h2><p>Describe the app, its managed services, entry port and proof checks. OpenTry applies strict ceilings before rendering a Zerops import.</p><a class="btn btn-dark" href="https://github.com/RajdeepKushwaha5/OpenTry/tree/main/catalog" target="_blank" rel="noopener">View the catalog ↗</a></div>
-      <div class="code-card"><div class="code-top"><span>opentry.yaml</span><span>validated + clamped</span></div><pre><span class="k">app:</span>
+      <div class="code-card"><div class="code-top"><span>opentry.yaml</span><span>validated + clamped</span></div><pre><span class="k">version:</span> <span class="v">1</span>
+<span class="k">app:</span>
+  <span class="k">slug:</span> myapp
   <span class="k">name:</span> My open-source app
 <span class="k">trial:</span>
   <span class="k">ttlMinutes:</span> <span class="v">30</span>
   <span class="k">entry:</span> { service: app, port: <span class="v">3000</span> }
 <span class="k">infra:</span>
   <span class="k">services:</span>
-    - { hostname: db, type: <span class="v">postgresql@16</span> }
+    - { hostname: db, type: <span class="v">postgresql@16</span>, mode: NON_HA }
     - { hostname: app, type: <span class="v">nodejs@22</span> }
 <span class="k">verify:</span>
-  - { kind: http, path: <span class="v">/health</span> }</pre></div>
+  - { name: App responds, kind: http, path: <span class="v">/health</span> }</pre></div>
     </section>
   </main>
 
