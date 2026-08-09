@@ -14,6 +14,7 @@
  */
 
 import YAML from 'yaml';
+import { normaliseSeedStep } from '../../provisioner/src/seed.mjs';
 import { randomBytes } from 'node:crypto';
 import {
   LEASE_TAG,
@@ -190,6 +191,7 @@ export function parseManifest(yamlText, { source = 'opentry.yaml' } = {}) {
     },
     services: services.map(clampService),
     verify: Array.isArray(doc.verify) ? doc.verify.map(normaliseCheck) : [],
+    seed: Array.isArray(doc.seed) ? doc.seed.map(normaliseSeedStep) : [],
   };
 }
 

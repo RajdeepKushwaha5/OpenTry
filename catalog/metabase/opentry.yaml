@@ -28,15 +28,22 @@ app:
     outboundHttp: true      # can connect to arbitrary database hosts
     codeExecution: false
   firstSteps:
-    - Complete the short setup wizard — any details will do, it is disposable
-    - Metabase ships with a Sample Database; open it to get charts immediately
-    - Try "New → Question" and pick a table to explore
+    - You are already signed in — the setup wizard was completed for you
+    - Open "Browse data → Sample Database" for tables with real rows in them
+    - Try "New → Question" and pick Orders to build a chart in a few clicks
 
 trial:
   ttlMinutes: 30
   entry:
     service: app
     port: 3000
+  credentials:
+    - label: Email
+      key: OPENTRY_ADMIN_EMAIL
+      value: demo@opentry.dev
+    - label: Password
+      key: OPENTRY_ADMIN_PASSWORD
+      generate: password
 
 infra:
   services:
@@ -100,3 +107,42 @@ verify:
     path: /
     expectBodyContains: Metabase
     timeoutMs: 90000
+
+# -----------------------------------------------------------------------------
+# Seeding.
+#
+# Metabase opens on a multi-step setup wizard. A visitor with 30 minutes should
+# not spend the first five of them creating an account and clicking Next — and
+# an unconfigured wizard makes real infrastructure look like a broken demo.
+#
+# The setup API needs a single-use token that Metabase generates at boot and
+# exposes on /api/session/properties, which is why seed steps can capture a
+# value from one response and use it in the next.
+#
+# Not marked `required`: if Metabase changes this API, a visitor should still
+# get a working trial with a wizard, rather than no trial at all.
+# -----------------------------------------------------------------------------
+seed:
+  - name: Read the setup token
+    method: GET
+    path: /api/session/properties
+    expectStatus: [200]
+    capture:
+      setupToken: setup-token
+
+  - name: Create the admin account and skip the wizard
+    method: POST
+    path: /api/setup
+    expectStatus: [200, 201]
+    body:
+      token: ${setupToken}
+      user:
+        email: ${OPENTRY_ADMIN_EMAIL}
+        password: ${OPENTRY_ADMIN_PASSWORD}
+        first_name: OpenTry
+        last_name: Demo
+        site_name: OpenTry Trial
+      prefs:
+        site_name: OpenTry Trial
+        site_locale: en
+        allow_tracking: false

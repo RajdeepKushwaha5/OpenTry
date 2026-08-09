@@ -24,6 +24,7 @@ import { LEASE_TAG, LIMITS } from '../../shared/src/limits.mjs';
 import { renderImportYaml } from '../../shared/src/manifest.mjs';
 import { pollUntil } from './zerops-client.mjs';
 import { estimateCostUsd } from './cost.mjs';
+import { runSeed } from './seed.mjs';
 
 export const LeaseState = Object.freeze({
   REQUESTED: 'REQUESTED',
@@ -284,6 +285,18 @@ export async function provisionTrial({ client, manifest, trialId, emit = () => {
       step(`verify:${check.name}`, 'ok', check.name);
     }
     timings.verifiedMs = at();
+
+    // Seed AFTER verification: there is no point completing a setup wizard on
+    // an app that never came up, and a seed failure must not mask a real one.
+    if (manifest.seed?.length) {
+      await runSeed({
+        baseUrl: url,
+        steps: manifest.seed,
+        vars: { ...secrets, url },
+        emit: (e) => step(e.step, e.status, e.message),
+      });
+      timings.seededMs = at();
+    }
 
     step('ready', 'ok', 'Trial ready', { url });
 
