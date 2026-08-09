@@ -6,6 +6,14 @@ OpenTry helps developers evaluate self-hosted applications without creating a cl
 
 ### [Launch OpenTry →](https://api-2d72-3000.prg1.zerops.app)
 
+| | |
+|---|---|
+| **Live application** | <https://api-2d72-3000.prg1.zerops.app> |
+| **Source** | <https://github.com/RajdeepKushwaha5/OpenTry> |
+| **Live pool state** | [`/api/pool`](https://api-2d72-3000.prg1.zerops.app/api/pool) — warm trials right now |
+| **Live metrics** | [`/api/metrics`](https://api-2d72-3000.prg1.zerops.app/api/metrics) — real provisioning times and estimated spend |
+| **Platform findings** | [FINDINGS.md](FINDINGS.md) — eighteen undocumented Zerops behaviours |
+
 Built for [The Zerops Challenge](https://www.wemakedevs.org/hackathons/zerops).
 
 > OpenTry is not a simulated sandbox. Every trial is a real, separately networked Zerops project. When a warm trial is available, handoff takes seconds; provisioning its replacement continues in the background.
@@ -144,8 +152,23 @@ Useful endpoints:
 | [`/api/health/deep`](https://api-2d72-3000.prg1.zerops.app/api/health/deep) | Provisioning-aware health; returns `503` when unhealthy |
 | [`/api/metrics`](https://api-2d72-3000.prg1.zerops.app/api/metrics) | Operational snapshot and estimated spend |
 | [`/api/pool`](https://api-2d72-3000.prg1.zerops.app/api/pool) | Warm and provisioning capacity by app |
+| [`/api/pool/building`](https://api-2d72-3000.prg1.zerops.app/api/pool/building) | The trial currently being provisioned, so the UI can stream its timeline |
+| [`/api/catalog`](https://api-2d72-3000.prg1.zerops.app/api/catalog) | Offered apps, plus withheld ones and the reason |
+
+`/api/health/deep` reports the health of the **last ten finished provisions**, not the window average. A health probe is asked "is provisioning working now"; a burst of failures that has since been fixed should stop setting off alarms once the following attempts succeed, and a window average cannot express that.
 
 The controller can also send edge-triggered webhook alerts when health degrades and when it recovers.
+
+### For maintainers
+
+Two endpoints exist for people who want to put OpenTry on their own project:
+
+| Endpoint | Purpose |
+|---|---|
+| [`/badge/umami.svg`](https://api-2d72-3000.prg1.zerops.app/badge/umami.svg) | Live README badge reflecting real warm-pool state |
+| [`/api/apps/umami/embed`](https://api-2d72-3000.prg1.zerops.app/api/apps/umami/embed) | Ready-made badge and link snippets for a README |
+
+Badges are served outside `/api` so a popular README cannot trip the rate limiter and show every visitor a broken image.
 
 ## Architecture
 
@@ -329,6 +352,17 @@ The deployment helper:
 5. enables the API subdomain and verifies `/health`;
 6. prints the public URL while the controller begins warming trials.
 
+To ship a change to a control plane that is already running, use `npm run redeploy`. `npm run deploy` deliberately refuses to touch an existing project, so without this the only route was deleting and recreating it — discarding the database, every live trial, and the public URL:
+
+```bash
+npm run redeploy                      # rebuild api + controller from the pushed commit
+npm run redeploy -- --service api     # rebuild one service
+```
+
+Both deploy commands refuse to run against an uncommitted or unpushed working tree, because Zerops builds from GitHub: a pipeline triggered on local-only work rebuilds the previous commit and reports success.
+
+Environment variables come from the import manifest and are applied when the project is **created**. Editing `zerops-import.yaml` and rebuilding does not change them on a running deployment — set those through the Zerops GUI or API and restart the service.
+
 OpenTry currently has no GitHub Actions workflow. Deployment is manual through `npm run deploy` or Zerops' own pipeline controls; tests do not automatically gate pushes. This is deliberate documentation of the current state, not a claim of CI/CD that the repository does not contain.
 
 See [DEPLOY.md](DEPLOY.md) for token scope, repository visibility, staging names, safe redeployment, and public-operation guidance.
@@ -439,7 +473,7 @@ Zerops does not expose per-project invoice totals through the API used here. Ope
 
 - [Architecture and threat model](ARCHITECTURE.md)
 - [Deployment and operations](DEPLOY.md)
-- [Seventeen Zerops platform findings](FINDINGS.md)
+- [Eighteen Zerops platform findings](FINDINGS.md)
 - [Zerops Import YAML reference](https://docs.zerops.io/references/import)
 - [Zerops REST API reference](https://docs.zerops.io/references/api)
 - [Zerops pricing](https://docs.zerops.io/company/pricing)

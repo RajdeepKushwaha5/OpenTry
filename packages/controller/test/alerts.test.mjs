@@ -10,7 +10,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { Alerter } from '../src/alerts.mjs';
-import { Health } from '../src/metrics.mjs';
+import { Health, Metrics } from '../src/metrics.mjs';
 
 /** Metrics stub that returns whatever health we hand it. */
 const stubMetrics = (states) => {
@@ -128,5 +128,53 @@ describe('alerter', () => {
     await a.check();
     await a.check();
     assert.ok(lines.some((l) => l.includes('FAILING')), 'the log must land regardless');
+  });
+});
+
+/**
+ * The health verdict is what a monitor pages on, so its recency behaviour is
+ * worth pinning down. These drive the private #verdict through snapshot() with
+ * a stub pool, which is the only seam available and the one that matters.
+ */
+describe('health verdict reads recent outcomes, not the whole window', () => {
+  /** @param {boolean[]} recent newest-first outcome list; true = failed */
+  const metricsWith = (recent) => {
+    const pool = {
+      query: async (sql) => {
+        if (/ORDER BY created_at DESC/.test(sql)) return { rows: recent.map((f) => ({ failed: f })) };
+        if (/FROM leases\s+WHERE state IN/.test(sql)) return { rows: [] };
+        if (/percentile_cont/.test(sql)) return { rows: [] };
+        if (/coalesce\(sum/.test(sql)) return { rows: [{ spent: 0 }] };
+        return { rows: [] };
+      },
+    };
+    return new Metrics({ store: { pool }, catalog: new Map() });
+  };
+
+  test('a burst of old failures clears as successes push it out of view', async () => {
+    // The real incident: six failures in a 25-minute burst, bug fixed, every
+    // attempt afterwards succeeded. Under the old window-average verdict this
+    // reported FAILING for hours and /api/health/deep returned 503 the whole
+    // time. Recovery should track the recent run, not the window.
+    const F = true;
+    const S = false;
+    const verdict = async (recent) => (await metricsWith(recent).snapshot({ windowHours: 6 })).health;
+
+    // Newest first. Four successes so far — six of the last ten still failed.
+    assert.equal(await verdict([S, S, S, S, F, F, F, F, F, F]), Health.FAILING);
+    // Eight successes: 2/10 recent failures.
+    assert.equal(await verdict([S, S, S, S, S, S, S, S, F, F]), Health.DEGRADED);
+    // The burst has fallen out of the last ten entirely.
+    assert.equal(await verdict(Array(10).fill(S)), Health.OK);
+  });
+
+  test('failing now reads FAILING even if the window looks fine', async () => {
+    const snap = await metricsWith([true, true, true, true, true, false]).snapshot({ windowHours: 6 });
+    assert.equal(snap.health, Health.FAILING);
+  });
+
+  test('nothing finished and nothing building is idle, not healthy', async () => {
+    const snap = await metricsWith([]).snapshot({ windowHours: 6 });
+    assert.equal(snap.health, Health.IDLE);
   });
 });

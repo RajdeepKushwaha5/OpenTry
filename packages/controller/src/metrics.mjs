@@ -21,6 +21,29 @@
 import { LIMITS } from '../../shared/src/limits.mjs';
 import { estimateCostUsd } from '../../provisioner/src/cost.mjs';
 
+/**
+ * How many finished provisions the health verdict looks at.
+ *
+ * WHY NOT THE REPORTING WINDOW
+ * The verdict used to be the window's own failure rate, and that answers the
+ * wrong question. "Did provisioning fail at any point in the last six hours"
+ * is a reporting question; a health probe is asked "is provisioning working
+ * right now", and something monitoring it will page on the answer.
+ *
+ * The difference is not academic. A provisioning bug produced six failures in
+ * a twenty-five minute burst; it was found and fixed, and every attempt after
+ * it succeeded. The window-based verdict still reported FAILING for hours
+ * afterwards, because a fixed bug does not remove its own history. A probe
+ * that cannot distinguish "broken now" from "was broken earlier" trains you to
+ * ignore it, which is worse than not having it.
+ *
+ * So the verdict reads the last N outcomes, newest first, and the window keeps
+ * doing what it is good at: totals, percentiles and spend. A run of recent
+ * successes clears the verdict; a run of recent failures sets it, whether or
+ * not the window average has caught up.
+ */
+const RECENT_OUTCOMES = 10;
+
 /** Health verdicts, in increasing order of "you should look at this". */
 export const Health = Object.freeze({
   OK: 'ok',
@@ -75,6 +98,17 @@ export class Metrics {
       [since],
     );
 
+    // Recent outcomes, newest first. The verdict keys on these rather than on
+    // the whole window — see #verdict.
+    const { rows: recent } = await this.store.pool.query(
+      `SELECT (error IS NOT NULL) AS failed
+         FROM leases
+        WHERE (provision_ms IS NOT NULL OR error IS NOT NULL)
+        ORDER BY created_at DESC
+        LIMIT $1`,
+      [RECENT_OUTCOMES],
+    );
+
     const { rows: live } = await this.store.pool.query(
       `SELECT state, count(*)::int AS n FROM leases
         WHERE state IN ('PROVISIONING','READY_UNCLAIMED','CLAIMED','DESTROYING')
@@ -116,7 +150,7 @@ export class Metrics {
 
     return {
       windowHours,
-      health: this.#verdict({ finished, failureRate, live }),
+      health: this.#verdict({ recent, live }),
       failureRate: Number(failureRate.toFixed(3)),
       totals,
       perApp: outcomes.map((r) => ({
@@ -156,13 +190,16 @@ export class Metrics {
    * A single verdict, so a human (or an uptime check) does not have to read a
    * table to know whether something is wrong.
    */
-  #verdict({ finished, failureRate, live }) {
-    if (finished === 0) {
+  #verdict({ recent, live }) {
+    if (recent.length === 0) {
       const provisioning = live.find((r) => r.state === 'PROVISIONING')?.n ?? 0;
       return provisioning > 0 ? Health.OK : Health.IDLE;
     }
-    if (failureRate >= 0.5) return Health.FAILING;
-    if (failureRate >= 0.2) return Health.DEGRADED;
+
+    const failed = recent.filter((r) => r.failed).length;
+    const rate = failed / recent.length;
+    if (rate >= 0.5) return Health.FAILING;
+    if (rate >= 0.2) return Health.DEGRADED;
     return Health.OK;
   }
 }

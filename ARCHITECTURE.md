@@ -300,7 +300,7 @@ calls, a framework would have bought nothing.
 
 ## Testing
 
-**97 tests**, on Node's built-in runner, no new dependencies.
+**100 tests**, on Node's built-in runner, no new dependencies.
 
 The suite deliberately covers only things whose correctness cannot be
 established by reading them: resource clamping (a security property), every

@@ -1,6 +1,6 @@
 # Field notes from building on Zerops
 
-Seventeen behaviours found while building [OpenTry](https://github.com/RajdeepKushwaha5/OpenTry),
+Eighteen behaviours found while building [OpenTry](https://github.com/RajdeepKushwaha5/OpenTry),
 which creates and destroys real Zerops projects on demand. None of them are in
 the documentation. Each one cost a debugging cycle, and most of them cost that
 cycle **because the platform accepted the input and then failed quietly** —
@@ -13,7 +13,7 @@ observed against the live API, and the fix that worked is included.
 
 ## The pattern worth fixing first
 
-Nine of these seventeen share one shape:
+Nine of these eighteen share one shape:
 
 > **The API accepts something invalid, returns 2xx, and the failure surfaces
 > minutes later as a service that is stuck, silent, or unreachable.**
@@ -253,6 +253,32 @@ expensive than a vague one, because it sends you somewhere specific.
 
 Two suggestions: report the missing field, and mark `buildFromGit` required for
 a service that has previously built from git.
+
+### 18. Environment variables are import-time, and a rebuild does not re-read them
+
+`envVariables` in an Import YAML are applied when the project is **created**.
+Editing the manifest and triggering a rebuild — even a full pipeline rebuild
+from git — leaves the running services with whatever they were imported with.
+
+This is reasonable once you know it, and invisible until you do. We moved a
+concurrency ceiling from service scope to project scope, redeployed, and watched
+the API keep reporting the old value while the controller used the new one. The
+YAML in the repository and the behaviour of the deployment had silently
+diverged, and nothing in the rebuild output suggested it.
+
+To change one on a running deployment:
+
+```
+POST /project/{id}/env      { "key": "...", "content": "..." }
+PUT  /project-env/{id}      { "key": "...", "content": "..." }   # update existing
+```
+
+then restart the services that read it. Note `GET /project/{id}/env` is **405**;
+listing project variables is not the inverse of creating them.
+
+Suggestion: a note in the Import YAML reference saying which fields are
+creation-only, and a warning when a rebuild is triggered against a manifest
+whose variables differ from the deployed set.
 
 ---
 
